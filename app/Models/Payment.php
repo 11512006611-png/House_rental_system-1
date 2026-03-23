@@ -17,6 +17,7 @@ class Payment extends Model
         'commission_amount',
         'owner_share_amount',
         'payment_date',
+        'payment_method',
         'transaction_id',
         'payment_proof_path',
         'status',

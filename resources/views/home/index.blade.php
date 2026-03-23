@@ -173,118 +173,73 @@
             <h2 class="testi-title">People Say About Us?</h2>
         </div>
 
-        <!-- Carousel -->
-        <div id="testiCarousel" class="carousel slide" data-bs-ride="carousel">
-            <div class="carousel-inner">
+        @php
+            $slides = $testimonialItems->chunk(3);
+            $avatarColors = ['#1e90be', '#7c3aed', '#f59e0b', '#10b981', '#ef4444', '#2563eb'];
+        @endphp
 
-                <!-- Slide 1 -->
-                <div class="carousel-item active">
-                    <div class="row g-4">
-                        <div class="col-lg-4 col-md-6">
-                            <div class="testi-card">
-                                <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
-                                <h6 class="testi-heading">The Services Provided are very good and helpful</h6>
-                                <p class="testi-body">HRS Bhutan made finding a house in Thimphu so easy. The listings are accurate and the process is smooth from start to finish.</p>
-                                <div class="testi-author">
-                                    <div class="testi-avatar" style="background:#1e90be;">D</div>
-                                    <div>
-                                        <div class="testi-name">Dorji Wangchuk</div>
-                                        <div class="testi-role">Tenant — Thimphu</div>
+        @if($slides->isNotEmpty())
+            <div id="testiCarousel" class="carousel slide" data-bs-ride="carousel">
+                <div class="carousel-inner">
+                    @foreach($slides as $slideIndex => $slideReviews)
+                        <div class="carousel-item {{ $slideIndex === 0 ? 'active' : '' }}">
+                            <div class="row g-4">
+                                @foreach($slideReviews as $reviewIndex => $review)
+                                    @php
+                                        $name = $review->name ?? 'Anonymous Tenant';
+                                        $initial = strtoupper(substr($name, 0, 1));
+                                        $location = $review->location ?: 'Bhutan';
+                                        $avatarColor = $review->avatarColor ?: $avatarColors[($slideIndex * 3 + $reviewIndex) % count($avatarColors)];
+                                    @endphp
+                                    <div class="col-lg-4 col-md-6 {{ $reviewIndex === 2 ? 'd-none d-lg-block' : ($reviewIndex === 1 ? 'd-none d-md-block' : '') }}">
+                                        <div class="testi-card">
+                                            <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
+                                            <h6 class="testi-heading">{{ $review->title }}</h6>
+                                            <p class="testi-body">{{ $review->message }}</p>
+                                            <div class="testi-author">
+                                                <div class="testi-avatar" style="background:{{ $avatarColor }};">{{ $initial }}</div>
+                                                <div>
+                                                    <div class="testi-name">{{ $name }}</div>
+                                                    <div class="testi-role">Tenant — {{ $location }}</div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                @endforeach
                             </div>
                         </div>
-                        <div class="col-lg-4 col-md-6 d-none d-md-block">
-                            <div class="testi-card">
-                                <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
-                                <h6 class="testi-heading">Found my perfect apartment within days</h6>
-                                <p class="testi-body">I was searching for months before I found HRS Bhutan. The filters helped me narrow down to exactly what I needed in Paro.</p>
-                                <div class="testi-author">
-                                    <div class="testi-avatar" style="background:#7c3aed;">P</div>
-                                    <div>
-                                        <div class="testi-name">Pema Lhamo</div>
-                                        <div class="testi-role">Tenant — Paro</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4 d-none d-lg-block">
-                            <div class="testi-card">
-                                <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
-                                <h6 class="testi-heading">Great platform for listing my properties</h6>
-                                <p class="testi-body">As a landlord I can manage all my listings in one place. I received rental requests within a week of posting my house.</p>
-                                <div class="testi-author">
-                                    <div class="testi-avatar" style="background:#f59e0b;">K</div>
-                                    <div>
-                                        <div class="testi-name">Kinley Tshering</div>
-                                        <div class="testi-role">Landlord — Punakha</div>
-                                    </div>
-                                </div>
+                    @endforeach
+                </div>
+
+                @if($testimonialItems->count() > 3)
+                    <div class="testi-controls mt-4 d-flex align-items-center gap-3">
+                        <button class="testi-arrow" data-bs-target="#testiCarousel" data-bs-slide="prev">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="testi-arrow testi-arrow--active" data-bs-target="#testiCarousel" data-bs-slide="next">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                @endif
+            </div>
+        @else
+            <div class="row g-4">
+                <div class="col-lg-4 col-md-6">
+                    <div class="testi-card">
+                        <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
+                        <h6 class="testi-heading">No tenant reviews yet</h6>
+                        <p class="testi-body">Be the first tenant to share your experience from the Tenant Dashboard.</p>
+                        <div class="testi-author">
+                            <div class="testi-avatar" style="background:#1e90be;">H</div>
+                            <div>
+                                <div class="testi-name">HRS Bhutan</div>
+                                <div class="testi-role">Community Updates</div>
                             </div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Slide 2 -->
-                <div class="carousel-item">
-                    <div class="row g-4">
-                        <div class="col-lg-4 col-md-6">
-                            <div class="testi-card">
-                                <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
-                                <h6 class="testi-heading">Transparent and trustworthy listings</h6>
-                                <p class="testi-body">Every house I viewed matched the description. No surprises — just honest, verified listings. I highly recommend HRS Bhutan.</p>
-                                <div class="testi-author">
-                                    <div class="testi-avatar" style="background:#10b981;">S</div>
-                                    <div>
-                                        <div class="testi-name">Sonam Choden</div>
-                                        <div class="testi-role">Tenant — Wangdue</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4 col-md-6 d-none d-md-block">
-                            <div class="testi-card">
-                                <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
-                                <h6 class="testi-heading">Renting out was never this simple</h6>
-                                <p class="testi-body">The rental management tools are excellent. I can track requests and communicate with tenants directly through the platform.</p>
-                                <div class="testi-author">
-                                    <div class="testi-avatar" style="background:#ef4444;">T</div>
-                                    <div>
-                                        <div class="testi-name">Tenzin Norbu</div>
-                                        <div class="testi-role">Landlord — Bumthang</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4 d-none d-lg-block">
-                            <div class="testi-card">
-                                <div class="testi-quote"><i class="fas fa-quote-left"></i></div>
-                                <h6 class="testi-heading">Best rental platform in Bhutan</h6>
-                                <p class="testi-body">I have used several platforms but HRS Bhutan stands out for its clean design, speed, and genuinely helpful support team.</p>
-                                <div class="testi-author">
-                                    <div class="testi-avatar" style="background:#f59e0b;">Y</div>
-                                    <div>
-                                        <div class="testi-name">Yangchen Dema</div>
-                                        <div class="testi-role">Tenant — Trongsa</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
             </div>
-
-            <!-- Controls -->
-            <div class="testi-controls mt-4 d-flex align-items-center gap-3">
-                <button class="testi-arrow" data-bs-target="#testiCarousel" data-bs-slide="prev">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <button class="testi-arrow testi-arrow--active" data-bs-target="#testiCarousel" data-bs-slide="next">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </div>
-        </div>
+        @endif
     </div>
 </section>
 

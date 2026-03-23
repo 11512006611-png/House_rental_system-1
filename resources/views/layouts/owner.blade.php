@@ -197,7 +197,13 @@
     $__ownerPendingProps = \App\Models\House::where('owner_id', auth()->id())->where('status', 'pending')->count();
     $__pendingRentals    = \App\Models\Rental::whereIn('house_id', \App\Models\House::where('owner_id', auth()->id())->pluck('id'))->where('status', 'pending')->count();
     $__overduePayments   = \App\Models\Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', \App\Models\House::where('owner_id', auth()->id())->pluck('id')))->where('status', 'overdue')->count();
-    $__notifTotal        = $__ownerPendingProps + $__pendingRentals + $__overduePayments;
+        $__leaseUploadQueue  = \App\Models\Rental::whereIn('house_id', \App\Models\House::where('owner_id', auth()->id())->pluck('id'))
+            ->where('status', 'active')
+            ->where('lease_status', 'requested')
+            ->whereDoesntHave('leaseAgreement')
+            ->count();
+    $__pendingMoveOuts   = \App\Models\MoveOutRequest::where('owner_id', auth()->id())->whereIn('status', ['requested', 'approved'])->count();
+        $__notifTotal        = $__ownerPendingProps + $__pendingRentals + $__leaseUploadQueue + $__overduePayments + $__pendingMoveOuts;
 @endphp
 
 <div class="d-flex" id="ownerWrapper">
@@ -256,6 +262,14 @@
                 <span class="badge">{{ $__pendingRentals }}</span>
                 @endif
             </a>
+                <a href="{{ route('owner.tenants', ['move_out' => 1]) }}"
+                    class="ob-nav-link {{ request()->routeIs('owner.tenants') && request('move_out') ? 'active' : '' }}">
+                     <span class="icon"><i class="fas fa-door-open"></i></span>
+                     Move-Out Tenants
+                     @if($__pendingMoveOuts > 0)
+                     <span class="badge" style="background:#ef4444;">{{ $__pendingMoveOuts }}</span>
+                     @endif
+                </a>
             <a href="{{ route('owner.payments') }}"
                class="ob-nav-link {{ request()->routeIs('owner.payments') ? 'active' : '' }}">
                 <span class="icon"><i class="fas fa-money-bill-wave"></i></span>
@@ -264,6 +278,14 @@
                 <span class="badge" style="background:#ef4444;">{{ $__overduePayments }}</span>
                 @endif
             </a>
+                <a href="{{ route('owner.tenants', ['lease_queue' => 1]) }}"
+                   class="ob-nav-link {{ request()->routeIs('owner.tenants') && request('lease_queue') ? 'active' : '' }}">
+                    <span class="icon"><i class="fas fa-file-signature"></i></span>
+                    Lease Agreements
+                    @if($__leaseUploadQueue > 0)
+                    <span class="badge" style="background:#0ea5e9;">{{ $__leaseUploadQueue }}</span>
+                    @endif
+                </a>
             @php $__pendingInspections = \App\Models\Inspection::whereHas('house', fn($q) => $q->where('owner_id', auth()->id()))->where('status','pending')->count(); @endphp
             <a href="{{ route('owner.inspections') }}"
                class="ob-nav-link {{ request()->routeIs('owner.inspections') ? 'active' : '' }}">
@@ -369,6 +391,16 @@
                                 <i class="fas fa-circle-exclamation text-danger" style="font-size:.75rem;"></i>
                             </span>
                             <span>{{ $__overduePayments }} overdue payment{{ $__overduePayments > 1 ? 's' : '' }}</span>
+                        </a>
+                    </li>
+                    @endif
+                    @if($__pendingMoveOuts > 0)
+                    <li>
+                        <a href="{{ route('owner.tenants', ['move_out' => 1]) }}" class="dropdown-item d-flex align-items-center gap-2 py-2" style="font-size:.8rem;">
+                            <span style="width:28px;height:28px;background:#fee2e2;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+                                <i class="fas fa-door-open text-danger" style="font-size:.75rem;"></i>
+                            </span>
+                            <span>{{ $__pendingMoveOuts }} move-out request{{ $__pendingMoveOuts > 1 ? 's' : '' }}</span>
                         </a>
                     </li>
                     @endif

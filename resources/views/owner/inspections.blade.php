@@ -366,7 +366,7 @@
 
                 <div class="inspection-actions">
                     @if ($inspection->status === 'pending')
-                        <button class="btn-action btn-approve" onclick="openApproveModal({{ $inspection->id }}, '{{ $inspection->house->title }}')">
+                        <button class="btn-action btn-approve" onclick='openApproveModal({{ $inspection->id }}, @json($inspection->house->title ?? "Property"))'>
                             ✓ Approve
                         </button>
                         <button class="btn-action btn-reject" onclick="openRejectModal({{ $inspection->id }})">
@@ -438,9 +438,13 @@
 </div>
 
 <script>
+const approveInspectionUrlTemplate = @json(route('owner.inspections.approve', ['inspection' => '__INSPECTION__']));
+const rejectInspectionUrlTemplate = @json(route('owner.inspections.reject', ['inspection' => '__INSPECTION__']));
+const completeInspectionUrlTemplate = @json(route('owner.inspections.complete', ['inspection' => '__INSPECTION__']));
+
 function openApproveModal(inspectionId, houseName) {
     document.getElementById('house_name').value = houseName;
-    document.getElementById('approveForm').action = `/owner/inspections/${inspectionId}/approve`;
+    document.getElementById('approveForm').action = approveInspectionUrlTemplate.replace('__INSPECTION__', inspectionId);
     document.getElementById('approveModal').style.display = 'block';
     
     // Set minimum date to tomorrow
@@ -454,7 +458,7 @@ function closeApproveModal() {
 }
 
 function openRejectModal(inspectionId) {
-    document.getElementById('rejectForm').action = `/owner/inspections/${inspectionId}/reject`;
+    document.getElementById('rejectForm').action = rejectInspectionUrlTemplate.replace('__INSPECTION__', inspectionId);
     document.getElementById('rejectModal').style.display = 'block';
 }
 
@@ -466,7 +470,7 @@ function completeInspection(inspectionId) {
     if (confirm('Mark this inspection as completed?')) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = `/owner/inspections/${inspectionId}/complete`;
+        form.action = completeInspectionUrlTemplate.replace('__INSPECTION__', inspectionId);
         form.innerHTML = '@csrf';
         document.body.appendChild(form);
         form.submit();

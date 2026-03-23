@@ -100,12 +100,14 @@
                 <tr>
                     <th>Tenant</th>
                     <th>Property</th>
+                    <th>Method</th>
                     <th>Amount</th>
                     <th>Owner Share</th>
                     <th>Payment Date</th>
                     <th>Proof</th>
                     <th>Status</th>
                     <th>Verification</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -133,6 +135,18 @@
                     {{-- Property --}}
                     <td style="font-size:.82rem;">
                         <div class="fw-500">{{ $pay->rental?->house?->title ?? '—' }}</div>
+                    </td>
+                    <td>
+                        @php
+                            $methodLabel = match($pay->payment_method) {
+                                'mbob' => 'mBoB',
+                                'mpay' => 'mPay',
+                                'bdbl' => 'BDBL',
+                                'cash' => 'Cash',
+                                default => '—',
+                            };
+                        @endphp
+                        <span class="chip chip-blue">{{ $methodLabel }}</span>
                     </td>
                     {{-- Amount --}}
                     <td class="fw-700" style="font-size:.88rem;color:#0f172a;">
@@ -168,6 +182,28 @@
                             <span class="chip chip-red">Rejected</span>
                         @else
                             <span class="chip chip-yellow">Pending</span>
+                        @endif
+                    </td>
+                    <td>
+                        @if($pay->verification_status === 'pending')
+                            <div class="d-flex gap-1 flex-wrap">
+                                <form method="POST" action="{{ route('owner.payments.verify', $pay) }}">
+                                    @csrf
+                                    <input type="hidden" name="status" value="verified">
+                                    <input type="hidden" name="notes" value="Owner confirmed advance payment completion.">
+                                    <button type="submit" class="btn btn-sm btn-success">Confirm Payment</button>
+                                </form>
+                                <form method="POST" action="{{ route('owner.payments.verify', $pay) }}">
+                                    @csrf
+                                    <input type="hidden" name="status" value="rejected">
+                                    <input type="hidden" name="notes" value="Owner rejected payment proof.">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
+                                </form>
+                            </div>
+                        @elseif($pay->verification_status === 'verified')
+                            <span class="chip chip-green">Completed</span>
+                        @else
+                            <span class="chip chip-red">Rejected</span>
                         @endif
                     </td>
                 </tr>

@@ -334,6 +334,72 @@
                     </ul>
                 </div>
             </div>
+
+            <div class="card border-0 shadow-sm mt-4" style="border-radius:16px;" id="share-review">
+                <div class="card-body p-4">
+                    <h5 class="fw-bold mb-1">
+                        <i class="fas fa-pen me-2" style="color:#1d4ed8;"></i>Share Your Review
+                    </h5>
+                    <p class="text-muted small mb-3">Write your experience any time. Your latest review appears on the home page testimonials.</p>
+
+                    @if(session('tenant_review_success'))
+                        <div class="alert alert-success small py-2">{{ session('tenant_review_success') }}</div>
+                    @endif
+
+                    <form action="{{ route('tenant.reviews.store') }}" method="POST">
+                        @csrf
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Review Title</label>
+                            <input
+                                type="text"
+                                name="title"
+                                class="form-control @error('title') is-invalid @enderror"
+                                maxlength="120"
+                                value="{{ old('title') }}"
+                                placeholder="Example: I found my rental quickly"
+                                required
+                            >
+                            @error('title')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Your Review</label>
+                            <textarea
+                                name="message"
+                                rows="4"
+                                class="form-control @error('message') is-invalid @enderror"
+                                maxlength="1000"
+                                placeholder="Share your experience with HRS Bhutan..."
+                                required
+                            >{{ old('message') }}</textarea>
+                            @error('message')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">Your Location (optional)</label>
+                            <input
+                                type="text"
+                                name="location"
+                                class="form-control @error('location') is-invalid @enderror"
+                                maxlength="80"
+                                value="{{ old('location') }}"
+                                placeholder="Example: Thimphu"
+                            >
+                            @error('location')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <button type="submit" class="btn btn-hrs-primary w-100">
+                            <i class="fas fa-paper-plane me-2"></i>Post Review
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
 
         {{-- ── Right column: Rental Requests ───────────────────────────── --}}
@@ -371,16 +437,19 @@
                                         ? $completedInspectionHouseIds->contains($rental->house_id)
                                         : false;
                                     $leaseAgreement = $rental->leaseAgreement;
+                                    $tenantSigned = (bool) optional($leaseAgreement)->tenant_signed_at;
+                                    $ownerSigned = (bool) optional($leaseAgreement)->owner_signed_at;
+                                    $bothSigned = $tenantSigned && $ownerSigned;
                                     $latestMoveOut = $rental->moveOutRequests->sortByDesc('created_at')->first();
-                                    $needsStayDecision = $rental->status === 'active' && $inspectionCompleted && $rental->lease_status === 'not_requested';
+                                    $leaseNotRequested = in_array($rental->lease_status, [null, '', 'not_requested'], true);
+                                    $needsStayDecision = $rental->status === 'active' && $inspectionCompleted && $leaseNotRequested;
 
                                     /* ── Compute step 0–5 (0 = stopped/rejected) ── */
                                     $step = 1;
                                     if ($rental->status === 'active')              $step = 2;
-                                    if ($rental->lease_status === 'requested')     $step = 3;
-                                    if ($isPaid)                                   $step = 3;
-                                    if ($isPaid && $rental->lease_status === 'requested') $step = 4;
-                                    if ($rental->lease_status === 'approved')      $step = 5;
+                                    if ($inspectionCompleted)                       $step = 3;
+                                    if (in_array($rental->lease_status, ['requested', 'approved'], true)) $step = 4;
+                                    if ($bothSigned && $rental->lease_status === 'approved') $step = 5;
                                     if (in_array($rental->status, ['cancelled','rejected']) || $rental->lease_status === 'rejected') $step = 0;
 
                                     $statusBadge = match ($rental->status) {
@@ -393,9 +462,9 @@
                                     $steps = [
                                         1 => 'Requested',
                                         2 => 'Accepted',
-                                        3 => 'Stay Confirmed',
-                                        4 => 'Lease Sent',
-                                        5 => 'Complete',
+                                        3 => 'Inspection Done',
+                                        4 => 'Stay Confirmed',
+                                        5 => 'Agreement Signed',
                                     ];
                                 @endphp
 
@@ -499,13 +568,25 @@
                                                 </a>
                                             @endif
 
-                                            @if($rental->lease_status === 'approved')
+                                            @if($bothSigned && $rental->lease_status === 'approved')
                                                 <span class="badge rounded-pill" style="background:#f0fdf4;color:#059669;">
-                                                    <i class="fas fa-file-signature me-1"></i>Lease Approved
+                                                    <i class="fas fa-file-signature me-1"></i>Agreement Fully Signed
+                                                </span>
+                                            @elseif($tenantSigned && !$ownerSigned)
+                                                <span class="badge rounded-pill" style="background:#fff7ed;color:#d97706;">
+                                                    <i class="fas fa-user-check me-1"></i>Tenant Signed, Waiting Owner
+                                                </span>
+                                            @elseif(!$tenantSigned && $ownerSigned)
+                                                <span class="badge rounded-pill" style="background:#fff7ed;color:#d97706;">
+                                                    <i class="fas fa-user-clock me-1"></i>Owner Signed, Waiting Tenant
+                                                </span>
+                                            @elseif($leaseAgreement && $isPaymentVerified)
+                                                <span class="badge rounded-pill" style="background:#eff6ff;color:#2563eb;">
+                                                    <i class="fas fa-file-signature me-1"></i>Agreement Ready For Signatures
                                                 </span>
                                             @elseif($rental->lease_status === 'requested')
                                                 <span class="badge rounded-pill" style="background:#eff6ff;color:#2563eb;">
-                                                    <i class="fas fa-hourglass-half me-1"></i>Lease Pending Review
+                                                    <i class="fas fa-hourglass-half me-1"></i>Waiting Payment Verification
                                                 </span>
                                             @elseif($rental->lease_status === 'rejected')
                                                 <span class="badge rounded-pill" style="background:#fef2f2;color:#dc2626;">
@@ -524,8 +605,33 @@
                                                 <i class="fas fa-trophy" style="color:#10b981;font-size:1.2rem;"></i>
                                                 <div>
                                                     <p class="fw-semibold text-success mb-0 small">Rental Process Complete!</p>
-                                                    <p class="text-muted small mb-0">Your lease agreement has been approved. Congratulations!</p>
+                                                    <p class="text-muted small mb-0">Both parties have digitally signed the agreement.</p>
                                                 </div>
+                                            </div>
+                                        @elseif($isPaymentVerified && $leaseAgreement && !$tenantSigned)
+                                            <div class="p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                                                <div class="d-flex align-items-start gap-2 mb-3">
+                                                    <i class="fas fa-file-signature mt-1" style="color:#2563eb;"></i>
+                                                    <p class="small mb-0" style="color:#1e3a8a;">
+                                                        Your digital agreement has been generated. Download and accept to sign.
+                                                    </p>
+                                                </div>
+                                                <div class="d-flex flex-wrap gap-2">
+                                                    <a href="{{ route('rentals.lease.download', $leaseAgreement) }}" class="btn btn-outline-primary btn-sm">
+                                                        <i class="fas fa-download me-1"></i>Download Agreement PDF
+                                                    </a>
+                                                    <form action="{{ route('rentals.agreement.accept', $rental) }}" method="POST">
+                                                        @csrf
+                                                        <button type="submit" class="btn btn-success btn-sm px-4">
+                                                            <i class="fas fa-check me-1"></i>Accept Agreement
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        @elseif($isPaymentVerified && $leaseAgreement && $tenantSigned && !$ownerSigned)
+                                            <div class="d-flex align-items-center gap-2 p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                                                <i class="fas fa-clock" style="color:#3b82f6;"></i>
+                                                <p class="text-primary small mb-0 fw-semibold">You signed the agreement. Waiting for owner approval…</p>
                                             </div>
                                         @elseif($needsStayDecision)
                                             <div class="p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
@@ -536,25 +642,37 @@
                                                         Do you want to stay in this property?
                                                     </p>
                                                 </div>
-                                                <div class="d-flex flex-wrap gap-2">
-                                                    <form action="{{ route('rentals.stay-decision', $rental) }}" method="POST">
-                                                        @csrf
-                                                        <input type="hidden" name="decision" value="yes">
-                                                        <button type="submit" class="btn btn-success btn-sm px-4">
-                                                            <i class="fas fa-check me-1"></i>Yes, I Want To Stay
+                                                <div class="row g-2">
+                                                    <div class="col-sm-6">
+                                                        <button type="button"
+                                                                class="btn btn-success w-100"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#stayConfirmModal{{ $rental->id }}">
+                                                            <i class="fas fa-check-circle me-2"></i>I Want to Stay
                                                         </button>
-                                                    </form>
-
-                                                    <button type="button"
-                                                            class="btn btn-outline-danger btn-sm px-4"
-                                                            data-bs-toggle="modal"
-                                                            data-bs-target="#stayNoModal{{ $rental->id }}">
-                                                        <i class="fas fa-times me-1"></i>No, Not Interested
-                                                    </button>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <button type="button"
+                                                                class="btn btn-outline-danger w-100"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#moveOutModal{{ $rental->id }}"
+                                                                @disabled($latestMoveOut && in_array($latestMoveOut->status, ['requested', 'approved']))>
+                                                            <i class="fas fa-door-open me-2"></i>
+                                                            {{ ($latestMoveOut && in_array($latestMoveOut->status, ['requested', 'approved'])) ? 'Move-Out Request In Progress' : 'I Want to Move Out' }}
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         @elseif($rental->status === 'active')
                                             <div class="row g-2">
+                                                @if(!$leaseNotRequested)
+                                                    <div class="col-12">
+                                                        <div class="d-flex align-items-center gap-2 p-3 rounded-3" style="background:#f0fdf4;border:1px solid #bbf7d0;">
+                                                            <i class="fas fa-house-user" style="color:#059669;"></i>
+                                                            <p class="small mb-0 fw-semibold text-success">You are currently staying in this property.</p>
+                                                        </div>
+                                                    </div>
+                                                @endif
                                                 <div class="col-sm-6">
                                                     <button type="button"
                                                             class="btn btn-outline-primary w-100"
@@ -574,7 +692,7 @@
                                                             </button>
                                                         @else
                                                             <button type="button" class="btn btn-secondary w-100" disabled>
-                                                                <i class="fas fa-file-contract me-2"></i>Waiting For Lease Upload
+                                                                <i class="fas fa-file-contract me-2"></i>Waiting for Owner Lease Upload
                                                             </button>
                                                         @endif
                                                     @elseif($payment->verification_status === 'pending')
@@ -583,7 +701,7 @@
                                                         </button>
                                                     @else
                                                         <button type="button" class="btn btn-success w-100" disabled>
-                                                            <i class="fas fa-check-circle me-2"></i>Payment Verified
+                                                            <i class="fas fa-check-circle me-2"></i>Payment Completed - You Can Shift
                                                         </button>
                                                     @endif
                                                 </div>
@@ -601,7 +719,7 @@
                                         @elseif($rental->lease_status === 'requested')
                                             <div class="d-flex align-items-center gap-2 p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
                                                 <i class="fas fa-clock" style="color:#3b82f6;"></i>
-                                                <p class="text-primary small mb-0 fw-semibold">Lease agreement is awaiting owner's review…</p>
+                                                <p class="text-primary small mb-0 fw-semibold">Payment review is in progress. Agreement will be generated automatically after successful verification.</p>
                                             </div>
                                         @elseif($rental->status === 'pending')
                                             <div class="d-flex align-items-center gap-2 p-3 rounded-3" style="background:#fff7ed;border:1px solid #fed7aa;">
@@ -640,6 +758,40 @@
                                 </div>
 
                                 {{-- Stay decision: No modal --}}
+                                <div class="modal fade" id="stayConfirmModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow-lg" style="border-radius:14px;">
+                                            <div class="modal-header border-0 pb-0">
+                                                <h6 class="modal-title fw-bold">I Want to Stay</h6>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <form action="{{ route('rentals.stay-decision', $rental) }}" method="POST">
+                                                @csrf
+                                                <input type="hidden" name="decision" value="yes">
+                                                <div class="modal-body pt-2">
+                                                    <p class="small mb-3" style="color:#1e3a8a;">Do you want to continue staying in this property?</p>
+                                                    <div class="mb-3">
+                                                        <label class="form-label small fw-semibold">Extend lease duration (optional)</label>
+                                                        <select name="lease_extension" class="form-select">
+                                                            <option value="">No extension</option>
+                                                            <option value="6_months">6 months</option>
+                                                            <option value="1_year">1 year</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label class="form-label small fw-semibold">Message (optional)</label>
+                                                        <textarea name="message" rows="3" maxlength="500" class="form-control" placeholder="Any note for the owner"></textarea>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer border-0 pt-0">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-success">Confirm Stay</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="modal fade" id="stayNoModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
                                     <div class="modal-dialog modal-dialog-centered">
                                         <div class="modal-content border-0 shadow-lg" style="border-radius:14px;">
@@ -665,39 +817,305 @@
                                 </div>
 
                                 <div class="modal fade" id="paymentModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
-                                    <div class="modal-dialog modal-dialog-centered">
-                                        <div class="modal-content border-0 shadow-lg" style="border-radius:14px;">
-                                            <div class="modal-header border-0 pb-0">
-                                                <h6 class="modal-title fw-bold">Submit Advance Payment</h6>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+                                        <div class="modal-content border-0 shadow-lg" style="border-radius:16px;max-height:90vh;">
+                                            <div class="modal-header border-0 pb-2" style="background:linear-gradient(135deg,#10b981,#059669);">
+                                                <div class="text-white">
+                                                    <h5 class="modal-title fw-bold mb-1">
+                                                        <i class="fas fa-wallet me-2"></i>Submit Advance Payment
+                                                    </h5>
+                                                    <p class="mb-0 small opacity-75">Advance (2 months): <strong>Nu. {{ number_format($rental->monthly_rent * 2, 0) }}</strong></p>
+                                                </div>
+                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                             </div>
-                                            <form action="{{ route('rentals.pay', $rental) }}" method="POST" enctype="multipart/form-data">
+                                            <form action="{{ route('rentals.pay', $rental) }}" method="POST" enctype="multipart/form-data" id="paymentForm{{ $rental->id }}">
                                                 @csrf
-                                                <div class="modal-body pt-2">
-                                                    <p class="small text-muted mb-2">Provide transaction ID or payment proof file.</p>
-                                                    <div class="mb-3">
-                                                        <label class="form-label small fw-semibold">Transaction ID (optional if file attached)</label>
-                                                        <input type="text" name="transaction_id" maxlength="120" class="form-control"
-                                                               placeholder="Example: TXN-123456789">
+                                                <input type="hidden" name="confirm_payment" value="1">
+                                                <div class="modal-body" style="padding:1.5rem 1.5rem;">
+                                                    <div class="alert alert-info d-flex gap-2 mb-4" style="border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;">
+                                                        <i class="fas fa-info-circle mt-1 flex-shrink-0"></i>
+                                                        <div class="small">
+                                                            <strong>Payment Instructions:</strong><br>
+                                                            First choose payment method (mBoB, mPay, BDBL, or Cash), then provide either a transaction ID OR a payment proof file.
+                                                        </div>
                                                     </div>
-                                                    <div class="mb-3">
-                                                        <label class="form-label small fw-semibold">Payment proof file (optional if transaction ID provided)</label>
-                                                        <input type="file" name="payment_proof" class="form-control" accept=".jpg,.jpeg,.png,.pdf">
-                                                    </div>
-                                                    <div>
-                                                        <label class="form-label small fw-semibold">Note (optional)</label>
-                                                        <textarea name="notes" rows="3" maxlength="500" class="form-control"
-                                                                  placeholder="Additional payment details"></textarea>
+
+                                                    <div class="row g-3">
+                                                        <div class="col-12">
+                                                            <label class="form-label fw-semibold" style="font-size:0.85rem;color:#1e293b;">
+                                                                <i class="fas fa-building-columns me-1" style="color:#0ea5e9;"></i>Payment Method
+                                                                <span class="text-danger">*</span>
+                                                            </label>
+                                                            <select name="payment_method" id="paymentMethod{{ $rental->id }}"
+                                                                    class="form-select form-select-lg"
+                                                                    style="border-radius:10px;border:2px solid #e2e8f0;font-size:1rem;"
+                                                                    required>
+                                                                <option value="">Select payment method</option>
+                                                                <option value="mbob">mBoB</option>
+                                                                <option value="mpay">mPay</option>
+                                                                <option value="bdbl">BDBL</option>
+                                                                <option value="cash">Cash</option>
+                                                            </select>
+                                                            <small id="methodHelp{{ $rental->id }}" class="text-muted d-block mt-1">Choose the app or cash mode used for this payment.</small>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <label class="form-label fw-semibold" style="font-size:0.85rem;color:#1e293b;">
+                                                                <i class="fas fa-hashtag me-1" style="color:#3b82f6;"></i>Transaction ID
+                                                                <span class="text-muted" style="font-weight:400;font-size:0.75rem;">(Optional)</span>
+                                                            </label>
+                                                            <input type="text" name="transaction_id" id="txId{{ $rental->id }}" maxlength="120" 
+                                                                   class="form-control form-control-lg" style="border-radius:10px;border:2px solid #e2e8f0;font-size:1rem;"
+                                                                   placeholder="e.g., TXN-323492034 or DRUK-PAY-12345"
+                                                                   onchange="validatePaymentForm{{ $rental->id }}()">
+                                                            <small class="text-muted d-block mt-1">From mobile banking, BDT, or other payment app</small>
+                                                        </div>
+
+                                                        <div class="col-12" style="position:relative;">
+                                                            <div style="text-align:center;margin:1rem 0;color:#94a3b8;">
+                                                                <small style="text-transform:uppercase;letter-spacing:0.05em;">OR</small>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <label class="form-label fw-semibold" style="font-size:0.85rem;color:#1e293b;">
+                                                                <i class="fas fa-file-image me-1" style="color:#f59e0b;"></i>Payment Proof
+                                                                <span class="text-muted" style="font-weight:400;font-size:0.75rem;">(Optional)</span>
+                                                            </label>
+                                                            <div class="mb-2">
+                                                                <input type="file" name="payment_proof" id="proofFile{{ $rental->id }}" 
+                                                                       class="form-control form-control-lg" style="border-radius:10px;border:2px dashed #e2e8f0;padding:1rem;cursor:pointer;"
+                                                                       accept=".jpg,.jpeg,.png,.pdf"
+                                                                     onchange="handleFileChange{{ $rental->id }}(this)">
+                                                            </div>
+                                                            <small class="text-muted d-block">Accepted: JPG, PNG, PDF (Max 5MB)</small>
+                                                            <small id="fileInfo{{ $rental->id }}" class="text-success d-none d-block mt-1">
+                                                                <i class="fas fa-check-circle me-1"></i><span id="fileName{{ $rental->id }}"></span>
+                                                            </small>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <button type="button" class="btn w-100" id="confirmPayQuickBtn{{ $rental->id }}"
+                                                                    style="background:linear-gradient(135deg,#10b981,#059669);color:white;border-radius:10px;font-weight:700;padding:0.75rem 1.2rem;"
+                                                                    disabled>
+                                                                <i class="fas fa-check-circle me-2"></i>Confirm Payment
+                                                            </button>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <label class="form-label fw-semibold" style="font-size:0.85rem;color:#1e293b;">
+                                                                <i class="fas fa-comment me-1" style="color:#8b5cf6;"></i>Additional Notes
+                                                                <span class="text-muted" style="font-weight:400;font-size:0.75rem;">(Optional)</span>
+                                                            </label>
+                                                            <textarea name="notes" id="notes{{ $rental->id }}" rows="4" maxlength="500" 
+                                                                      class="form-control" style="border-radius:10px;border:2px solid #e2e8f0;font-size:0.95rem;resize:vertical;"
+                                                                      placeholder="E.g., Payment made via BDT. Transaction done on [date]. Bank reference: [...]"></textarea>
+                                                            <small class="text-muted d-block mt-1"><span id="charCount{{ $rental->id }}">0</span>/500 characters</small>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <button type="button" class="btn w-100" id="confirmPayTopBtn{{ $rental->id }}"
+                                                                    style="background:linear-gradient(135deg,#10b981,#059669);color:white;border-radius:10px;font-weight:700;padding:0.75rem 1.2rem;"
+                                                                    disabled>
+                                                                <i class="fas fa-check-circle me-2"></i>Confirm Payment
+                                                            </button>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <div class="form-check" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.75rem .9rem;">
+                                                                <input class="form-check-input" type="checkbox" value="1"
+                                                                       id="confirmPayment{{ $rental->id }}"
+                                                                       checked>
+                                                                <label class="form-check-label small" for="confirmPayment{{ $rental->id }}" style="color:#334155;">
+                                                                    I confirm the selected payment method and payment details are correct.
+                                                                </label>
+                                                            </div>
+                                                            <small class="text-muted d-block mt-1">Review your details, then click Confirm Payment.</small>
+                                                        </div>
+
+                                                        <div class="col-12 alert alert-warning d-flex gap-2" style="border-radius:12px;background:#fffbeb;border:1px solid #fcd34d;margin-top:1rem;">
+                                                            <i class="fas fa-exclamation-triangle mt-1 flex-shrink-0" style="color:#d97706;"></i>
+                                                            <small style="color:#92400e;"><strong>Important:</strong> Your payment will be verified by admin. Once verified, the lease agreement will be generated automatically.</small>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <div class="p-3" style="border-radius:12px;background:#ecfeff;border:1px solid #bae6fd;">
+                                                                <div class="small text-uppercase fw-semibold" style="letter-spacing:.05em;color:#0369a1;">Total Advance Amount</div>
+                                                                <div class="fw-bold" style="font-size:1.2rem;color:#0f172a;">Nu. {{ number_format($rental->monthly_rent * 2, 0) }}</div>
+                                                                <small class="text-muted">This is equal to 2 months rent.</small>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="col-12">
+                                                            <div id="paymentValidationError{{ $rental->id }}" class="alert alert-danger py-2 d-none mb-0">
+                                                                Please select a payment method and provide either Transaction ID or Payment Proof.
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="col-12 mt-2">
+                                                            <button type="button" class="btn w-100" id="confirmPayBtn{{ $rental->id }}"
+                                                                    style="background:linear-gradient(135deg,#10b981,#059669);color:white;border-radius:10px;font-weight:700;padding:0.75rem 1.2rem;"
+                                                                    disabled>
+                                                                <span id="confirmPayLabel{{ $rental->id }}"><i class="fas fa-check-circle me-2"></i>Confirm &amp; Pay</span>
+                                                                <span id="confirmPaySpinner{{ $rental->id }}" class="d-none"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing...</span>
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div class="modal-footer border-0 pt-0">
-                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                                                    <button type="submit" class="btn btn-success">Submit For Verification</button>
+                                                <div class="modal-footer border-0 pt-2" style="background:#f8fafc;padding:1rem 1.5rem;">
+                                                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius:10px;font-weight:600;">Cancel</button>
+                                                    <button type="button" class="btn" id="confirmPayFooterBtn{{ $rental->id }}"
+                                                            style="background:linear-gradient(135deg,#10b981,#059669);color:white;border-radius:10px;font-weight:700;padding:0.6rem 1.2rem;"
+                                                            disabled>
+                                                        <i class="fas fa-check-circle me-2"></i>Confirm &amp; Pay
+                                                    </button>
                                                 </div>
                                             </form>
                                         </div>
                                     </div>
                                 </div>
+
+                                <div class="modal fade" id="confirmPaymentModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content border-0 shadow" style="border-radius:14px;">
+                                            <div class="modal-header border-0">
+                                                <h6 class="modal-title fw-bold">Confirm Payment</h6>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body pt-0">
+                                                <p class="mb-0">Are you sure you want to submit this advance payment of <strong>Nu. {{ number_format($rental->monthly_rent * 2, 0) }}</strong>?</p>
+                                            </div>
+                                            <div class="modal-footer border-0">
+                                                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="button" class="btn btn-success" id="confirmModalSubmitBtn{{ $rental->id }}">Confirm</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <script>
+                                document.getElementById('notes{{ $rental->id }}').addEventListener('input', function() {
+                                    document.getElementById('charCount{{ $rental->id }}').textContent = this.value.length;
+                                });
+
+                                document.getElementById('paymentMethod{{ $rental->id }}').addEventListener('change', function() {
+                                    const method = this.value;
+                                    const txInput = document.getElementById('txId{{ $rental->id }}');
+                                    const methodHelp = document.getElementById('methodHelp{{ $rental->id }}');
+
+                                    if (method === 'mbob') {
+                                        txInput.placeholder = 'e.g., mBoB-TRX-2026001';
+                                        methodHelp.textContent = 'Selected: mBoB mobile banking payment.';
+                                    } else if (method === 'mpay') {
+                                        txInput.placeholder = 'e.g., MPAY-TRX-2026001';
+                                        methodHelp.textContent = 'Selected: mPay wallet payment.';
+                                    } else if (method === 'bdbl') {
+                                        txInput.placeholder = 'e.g., BDBL-REF-2026001';
+                                        methodHelp.textContent = 'Selected: BDBL banking payment.';
+                                    } else if (method === 'cash') {
+                                        txInput.placeholder = 'Enter receipt/cash reference (if available)';
+                                        methodHelp.textContent = 'Selected: Cash payment. Upload a receipt photo if possible.';
+                                    } else {
+                                        txInput.placeholder = 'e.g., TXN-323492034 or DRUK-PAY-12345';
+                                        methodHelp.textContent = 'Choose the app or cash mode used for this payment.';
+                                    }
+
+                                    validatePaymentForm{{ $rental->id }}();
+                                });
+
+                                function handleFileChange{{ $rental->id }}(input) {
+                                    if (input.files && input.files[0]) {
+                                        const file = input.files[0];
+                                        document.getElementById('fileInfo{{ $rental->id }}').classList.remove('d-none');
+                                        document.getElementById('fileName{{ $rental->id }}').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+                                    } else {
+                                        document.getElementById('fileInfo{{ $rental->id }}').classList.add('d-none');
+                                    }
+                                    validatePaymentForm{{ $rental->id }}();
+                                }
+
+                                function validatePaymentForm{{ $rental->id }}() {
+                                    const method = document.getElementById('paymentMethod{{ $rental->id }}').value;
+                                    const txId = document.getElementById('txId{{ $rental->id }}').value.trim();
+                                    const proofFile = document.getElementById('proofFile{{ $rental->id }}').files.length > 0;
+                                    const confirmPayQuickBtn = document.getElementById('confirmPayQuickBtn{{ $rental->id }}');
+                                    const confirmPayBtn = document.getElementById('confirmPayBtn{{ $rental->id }}');
+                                    const confirmPayTopBtn = document.getElementById('confirmPayTopBtn{{ $rental->id }}');
+                                    const confirmPayFooterBtn = document.getElementById('confirmPayFooterBtn{{ $rental->id }}');
+                                    const errorBox = document.getElementById('paymentValidationError{{ $rental->id }}');
+                                    
+                                    if (method.length > 0 && (txId.length > 0 || proofFile)) {
+                                        confirmPayQuickBtn.disabled = false;
+                                        confirmPayBtn.disabled = false;
+                                        confirmPayTopBtn.disabled = false;
+                                        confirmPayFooterBtn.disabled = false;
+                                        confirmPayQuickBtn.style.opacity = '1';
+                                        confirmPayQuickBtn.style.cursor = 'pointer';
+                                        confirmPayBtn.style.opacity = '1';
+                                        confirmPayBtn.style.cursor = 'pointer';
+                                        confirmPayTopBtn.style.opacity = '1';
+                                        confirmPayTopBtn.style.cursor = 'pointer';
+                                        confirmPayFooterBtn.style.opacity = '1';
+                                        confirmPayFooterBtn.style.cursor = 'pointer';
+                                        errorBox.classList.add('d-none');
+                                    } else {
+                                        confirmPayQuickBtn.disabled = true;
+                                        confirmPayBtn.disabled = true;
+                                        confirmPayTopBtn.disabled = true;
+                                        confirmPayFooterBtn.disabled = true;
+                                        confirmPayQuickBtn.style.opacity = '0.5';
+                                        confirmPayQuickBtn.style.cursor = 'not-allowed';
+                                        confirmPayBtn.style.opacity = '0.5';
+                                        confirmPayBtn.style.cursor = 'not-allowed';
+                                        confirmPayTopBtn.style.opacity = '0.5';
+                                        confirmPayTopBtn.style.cursor = 'not-allowed';
+                                        confirmPayFooterBtn.style.opacity = '0.5';
+                                        confirmPayFooterBtn.style.cursor = 'not-allowed';
+                                    }
+                                }
+
+                                function openConfirmPaymentModal{{ $rental->id }}() {
+                                    const method = document.getElementById('paymentMethod{{ $rental->id }}').value;
+                                    const txId = document.getElementById('txId{{ $rental->id }}').value.trim();
+                                    const proofFile = document.getElementById('proofFile{{ $rental->id }}').files.length > 0;
+                                    const errorBox = document.getElementById('paymentValidationError{{ $rental->id }}');
+
+                                    if (!method || (!txId && !proofFile)) {
+                                        errorBox.classList.remove('d-none');
+                                        return;
+                                    }
+
+                                    errorBox.classList.add('d-none');
+                                    const confirmModal = new bootstrap.Modal(document.getElementById('confirmPaymentModal{{ $rental->id }}'));
+                                    confirmModal.show();
+                                }
+
+                                document.getElementById('confirmPayBtn{{ $rental->id }}').addEventListener('click', openConfirmPaymentModal{{ $rental->id }});
+                                document.getElementById('confirmPayQuickBtn{{ $rental->id }}').addEventListener('click', openConfirmPaymentModal{{ $rental->id }});
+                                document.getElementById('confirmPayTopBtn{{ $rental->id }}').addEventListener('click', openConfirmPaymentModal{{ $rental->id }});
+                                document.getElementById('confirmPayFooterBtn{{ $rental->id }}').addEventListener('click', openConfirmPaymentModal{{ $rental->id }});
+
+                                document.getElementById('confirmModalSubmitBtn{{ $rental->id }}').addEventListener('click', function () {
+                                    const form = document.getElementById('paymentForm{{ $rental->id }}');
+                                    const confirmPayQuickBtn = document.getElementById('confirmPayQuickBtn{{ $rental->id }}');
+                                    const confirmPayBtn = document.getElementById('confirmPayBtn{{ $rental->id }}');
+                                    const confirmPayTopBtn = document.getElementById('confirmPayTopBtn{{ $rental->id }}');
+                                    const confirmPayFooterBtn = document.getElementById('confirmPayFooterBtn{{ $rental->id }}');
+                                    const confirmModalSubmitBtn = document.getElementById('confirmModalSubmitBtn{{ $rental->id }}');
+                                    const label = document.getElementById('confirmPayLabel{{ $rental->id }}');
+                                    const spinner = document.getElementById('confirmPaySpinner{{ $rental->id }}');
+
+                                    confirmPayQuickBtn.disabled = true;
+                                    confirmPayBtn.disabled = true;
+                                    confirmPayTopBtn.disabled = true;
+                                    confirmPayFooterBtn.disabled = true;
+                                    confirmModalSubmitBtn.disabled = true;
+                                    label.classList.add('d-none');
+                                    spinner.classList.remove('d-none');
+
+                                    form.submit();
+                                });
+                                </script>
 
                                 <div class="modal fade" id="moveOutModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
                                     <div class="modal-dialog modal-dialog-centered">
@@ -718,8 +1136,8 @@
                                                                   placeholder="Provide your reason" required></textarea>
                                                     </div>
                                                     <div>
-                                                        <label class="form-label small fw-semibold">Move-out date (optional)</label>
-                                                        <input type="date" name="move_out_date" class="form-control" min="{{ now()->toDateString() }}">
+                                                        <label class="form-label small fw-semibold">Move-out date</label>
+                                                        <input type="date" name="move_out_date" class="form-control" min="{{ now()->toDateString() }}" required>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer border-0 pt-0">

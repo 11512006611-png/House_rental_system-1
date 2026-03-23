@@ -10,6 +10,7 @@ use App\Models\Rental;
 use App\Models\User;
 use App\Notifications\WorkflowStatusNotification;
 use App\Services\LeaseAgreementService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -87,6 +88,26 @@ class OwnerController extends Controller
             ->take(5)
             ->get();
 
+        $latestMoveOutRequests = MoveOutRequest::with(['tenant', 'house', 'rental'])
+            ->where('owner_id', Auth::id())
+            ->latest()
+            ->take(20)
+            ->get();
+
+        $pendingMoveOutRequests = MoveOutRequest::with(['tenant', 'house'])
+            ->where('owner_id', Auth::id())
+            ->where('status', 'requested')
+            ->latest()
+            ->take(5)
+            ->get();
+
+        $movedOutTenantRecords = MoveOutRequest::with(['tenant', 'house'])
+            ->where('owner_id', Auth::id())
+            ->where('status', 'completed')
+            ->latest('completed_at')
+            ->take(20)
+            ->get();
+
         // Property list with active rental info
         $properties = House::where('owner_id', Auth::id())
             ->with(['rentals' => fn($q) => $q->where('status', 'active')->with('tenant')])
@@ -98,7 +119,8 @@ class OwnerController extends Controller
             'owner',
             'totalProperties', 'availableProperties', 'rentedProperties', 'pendingProperties',
             'totalActiveTenants', 'totalRevenue', 'pendingAmount', 'overdueAmount',
-            'chartData', 'recentPayments', 'recentTenants', 'latestRentalRequests', 'properties'
+            'chartData', 'recentPayments', 'recentTenants', 'latestRentalRequests',
+            'latestMoveOutRequests', 'pendingMoveOutRequests', 'movedOutTenantRecords', 'properties'
         ));
     }
 
@@ -135,6 +157,16 @@ class OwnerController extends Controller
 
         $query = Rental::with(['tenant', 'house', 'payments', 'leaseAgreement', 'moveOutRequests'])
             ->whereIn('house_id', $houseIds);
+
+        if ($request->boolean('move_out')) {
+            $query->whereHas('moveOutRequests');
+        }
+
+        if ($request->boolean('lease_queue')) {
+            $query->where('status', 'active')
+                ->where('lease_status', 'requested')
+                ->whereDoesntHave('leaseAgreement');
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -205,10 +237,22 @@ class OwnerController extends Controller
             return back()->with('error', 'This property already has an active rental.');
         }
 
-        $rental->update(['status' => 'active']);
+        $rental->update([
+            'status' => 'active',
+            'lease_status' => $rental->lease_status ?: 'not_requested',
+        ]);
         $rental->house->update(['status' => 'rented']);
 
-        return back()->with('success', 'Rental request accepted. Tenant can now proceed with payment.');
+        // Notify tenant of acceptance
+        if ($rental->tenant) {
+            $rental->tenant->notify(new WorkflowStatusNotification(
+                'rental_accepted_by_owner',
+                'Rental Request Accepted',
+                'Your rental request for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . ' has been accepted. Please make your payment from the Tenant Dashboard using mBoB, mPay, BDBL, or Cash details.'
+            ));
+        }
+
+        return back()->with('success', 'Rental request accepted. Tenant has been notified and can now proceed with payment.');
     }
 
     public function rejectRentalRequest(Rental $rental)
@@ -223,7 +267,16 @@ class OwnerController extends Controller
 
         $rental->update(['status' => 'cancelled']);
 
-        return back()->with('success', 'Rental request rejected.');
+        // Notify tenant of rejection
+        if ($rental->tenant) {
+            $rental->tenant->notify(new WorkflowStatusNotification(
+                'rental_rejected_by_owner',
+                'Rental Request Declined',
+                'Unfortunately, your rental request for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . ' has been declined by the owner. Please feel free to browse other properties.'
+            ));
+        }
+
+        return back()->with('success', 'Rental request rejected. Tenant has been notified.');
     }
 
     public function approveLease(Rental $rental)
@@ -248,20 +301,34 @@ class OwnerController extends Controller
             return back()->with('error', 'This lease agreement is not pending approval.');
         }
 
-        $rental->update([
-            'lease_status' => 'approved',
-            'lease_reviewed_at' => now(),
+        if ($rental->leaseAgreement->owner_signed_at) {
+            return back()->with('error', 'You have already approved this agreement.');
+        }
+
+        $rental->leaseAgreement->update([
+            'owner_signature_name' => Auth::user()->name,
+            'owner_signed_at' => now(),
         ]);
+
+        if ($rental->leaseAgreement->tenant_signed_at) {
+            $rental->update([
+                'lease_status' => 'approved',
+                'lease_reviewed_at' => now(),
+            ]);
+        }
+
+        LeaseAgreementService::regeneratePdf($rental->leaseAgreement->fresh());
 
         if ($rental->tenant) {
             $rental->tenant->notify(new WorkflowStatusNotification(
-                'lease_approved',
-                'Lease Approved',
-                'Your lease for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . ' has been approved by the owner.'
+                'agreement_approved_by_owner',
+                'Agreement Approved by Owner',
+                'Owner approved the agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. '
+                . ($rental->lease_status === 'approved' ? 'The lease process is now complete.' : 'Please accept the agreement to complete the process.')
             ));
         }
 
-        return back()->with('success', 'Lease agreement approved successfully.');
+        return back()->with('success', 'Agreement approved digitally.');
     }
 
     public function rejectLease(Rental $rental)
@@ -309,13 +376,21 @@ class OwnerController extends Controller
         ]);
 
         $storedPath = $request->file('lease_file')->store('lease-agreements', 'public');
+        $twoMonthAdvance = (float) ($rental->monthly_rent * 2);
 
         $rental->leaseAgreement()->updateOrCreate(
             ['rental_id' => $rental->id],
             [
                 'owner_id' => Auth::id(),
+                'tenant_id' => $rental->tenant_id,
+                'house_id' => $rental->house_id,
                 'file_path' => $storedPath,
                 'original_name' => $request->file('lease_file')->getClientOriginalName(),
+                'monthly_rent' => (float) $rental->monthly_rent,
+                'deposit_amount' => $twoMonthAdvance,
+                'payment_status' => 'pending',
+                'lease_start_date' => $rental->start_date ?? $rental->rental_date,
+                'lease_end_date' => $rental->end_date,
                 'uploaded_at' => now(),
             ]
         );
@@ -324,11 +399,11 @@ class OwnerController extends Controller
             $rental->tenant->notify(new WorkflowStatusNotification(
                 'lease_sent',
                 'Lease Sent',
-                'Owner uploaded lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Please review and proceed with payment.'
+                'Owner uploaded lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Please review and proceed with advance payment of Nu. ' . number_format($twoMonthAdvance, 0) . ' (2 months).'
             ));
         }
 
-        return back()->with('success', 'Lease agreement uploaded and tenant has been notified.');
+        return back()->with('success', 'Lease agreement uploaded with 2-month advance amount. Tenant has been notified to pay advance.');
     }
 
     public function approveMoveOutRequest(Request $request, MoveOutRequest $moveOutRequest)
@@ -481,7 +556,9 @@ class OwnerController extends Controller
             return back()->with('error', 'Lease can only be generated for active rentals.');
         }
 
-        if ($rental->lease_status !== 'not_requested') {
+        $leaseNotRequested = in_array($rental->lease_status, [null, '', 'not_requested'], true);
+
+        if (! $leaseNotRequested) {
             return back()->with('error', 'Lease has already been requested for this rental.');
         }
 
@@ -588,13 +665,15 @@ class OwnerController extends Controller
         }
 
         $validated = $request->validate([
-            'scheduled_at' => 'required|date_format:Y-m-d H:i',
+            'scheduled_at' => 'required|date',
             'owner_notes' => 'nullable|string|max:500',
         ]);
 
+        $scheduledAt = Carbon::parse($validated['scheduled_at']);
+
         $inspection->update([
             'status' => 'approved',
-            'scheduled_at' => $validated['scheduled_at'],
+            'scheduled_at' => $scheduledAt,
             'owner_notes' => $validated['owner_notes'] ?? null,
         ]);
 
@@ -602,7 +681,7 @@ class OwnerController extends Controller
             $inspection->tenant->notify(new WorkflowStatusNotification(
                 'inspection_approved',
                 'Inspection Approved',
-                'Your inspection request for ' . ($inspection->house->title ?? ('Property #' . $inspection->house_id)) . ' has been approved for ' . date('d M Y, g:i A', strtotime($validated['scheduled_at'])) . '.'
+                'Your inspection request for ' . ($inspection->house->title ?? ('Property #' . $inspection->house_id)) . ' has been approved for ' . $scheduledAt->format('d M Y, g:i A') . '.'
             ));
         }
 
@@ -666,25 +745,53 @@ class OwnerController extends Controller
 
     public function verifyPayment(Request $request, Payment $payment)
     {
-        // Owner can view and comment on payment, but admin verifies
         if ((int) $payment->rental->house->owner_id !== (int) Auth::id()) {
             abort(403, 'Unauthorized action.');
         }
 
-        // For now, owner can mark as verified temporarily (admin should do final verification)
-        // This is a workflow step before admin final verification
+        if ($payment->verification_status === 'verified') {
+            return back()->with('error', 'This advance payment is already marked as completed.');
+        }
 
         $validated = $request->validate([
             'status' => 'required|in:verified,rejected',
             'notes' => 'nullable|string|max:500',
         ]);
 
-        // Only update notes for owner review
+        if ($validated['status'] === 'verified') {
+            $payment->update([
+                'status' => 'paid',
+                'verification_status' => 'verified',
+                'verified_at' => now(),
+                'notes' => trim(($payment->notes ? $payment->notes . ' | ' : '') . 'Owner confirmed advance payment as completed.' . (!empty($validated['notes']) ? ' Note: ' . $validated['notes'] : '')),
+            ]);
+
+            if ($payment->tenant) {
+                $payment->tenant->notify(new WorkflowStatusNotification(
+                    'advance_payment_completed',
+                    'Advance Payment Completed',
+                    'Owner confirmed your advance payment for ' . ($payment->rental->house->title ?? ('Property #' . $payment->rental->house_id)) . '. You can now shift to the place.'
+                ));
+            }
+
+            return back()->with('success', 'Advance payment marked as complete. Tenant has been notified.');
+        }
+
         $payment->update([
-            'notes' => ($payment->notes ? $payment->notes . ' | Owner: ' : 'Owner: ') . ($validated['notes'] ?? 'No additional notes'),
+            'status' => 'overdue',
+            'verification_status' => 'rejected',
+            'notes' => trim(($payment->notes ? $payment->notes . ' | ' : '') . 'Owner rejected payment confirmation.' . (!empty($validated['notes']) ? ' Reason: ' . $validated['notes'] : '')),
         ]);
 
-        return back()->with('success', 'Payment review saved. Admin will finalize verification.');
+        if ($payment->tenant) {
+            $payment->tenant->notify(new WorkflowStatusNotification(
+                'advance_payment_rejected',
+                'Advance Payment Rejected',
+                'Owner rejected your advance payment for ' . ($payment->rental->house->title ?? ('Property #' . $payment->rental->house_id)) . '. Please submit valid payment details again.'
+            ));
+        }
+
+        return back()->with('success', 'Payment marked as rejected. Tenant has been notified.');
     }
 
     public function paymentProofView(Payment $payment)

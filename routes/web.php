@@ -8,6 +8,7 @@ use App\Http\Controllers\HouseController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\OwnerController;
 use App\Http\Controllers\RentalController;
+use App\Http\Controllers\TenantReviewController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -66,6 +67,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/houses/{house}/rent', [RentalController::class, 'store'])->name('rentals.store');
     Route::get('/my-rentals', [RentalController::class, 'myRentals'])->name('rentals.my-rentals');
     Route::post('/rentals/{rental}/stay-decision', [RentalController::class, 'stayDecision'])->name('rentals.stay-decision');
+    Route::post('/rentals/{rental}/agreement/accept', [RentalController::class, 'acceptAgreement'])->name('rentals.agreement.accept');
     Route::post('/rentals/{rental}/move-out', [RentalController::class, 'requestMoveOut'])->name('rentals.move-out.request');
     Route::get('/lease-agreements/{leaseAgreement}/download', [RentalController::class, 'downloadLease'])->name('rentals.lease.download');
     Route::post('/rentals/{rental}/pay', [RentalController::class, 'makePayment'])->name('rentals.pay');
@@ -78,6 +80,7 @@ Route::middleware('auth')->group(function () {
 // Tenant Dashboard routes
 Route::prefix('tenant')->name('tenant.')->middleware(['auth', 'tenant'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'tenant'])->name('dashboard');
+    Route::post('/reviews', [TenantReviewController::class, 'store'])->name('reviews.store');
 });
 
 // Legacy user dashboard alias routes

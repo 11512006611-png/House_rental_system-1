@@ -115,6 +115,7 @@ class HouseController extends Controller
     public function edit(House $house)
     {
         $this->authorize('update', $house);
+        $house->load('houseImages');
         $locations = Location::orderBy('dzongkhag_name')->get();
         $houseTypes = ['1BHK', '2BHK', '3BHK', 'Apartment', 'Villa', 'Studio', 'Duplex'];
         return view('houses.edit', compact('house', 'locations', 'houseTypes'));
@@ -137,14 +138,109 @@ class HouseController extends Controller
             'description' => 'nullable|string|max:2000',
             'status'      => 'required|in:available,rented,pending',
             'image'       => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'new_images'   => 'nullable|array',
+            'new_images.*' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'replace_images' => 'nullable|array',
+            'replace_images.*' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'delete_images' => 'nullable|array',
+            'delete_images.*' => 'nullable|integer',
         ]);
 
+        $deleteIds = collect($request->input('delete_images', []))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $coverPathDeleted = false;
+        $newCoverPath = null;
+
+        if (! $deleteIds->isEmpty()) {
+            $imagesToDelete = $house->houseImages()->whereIn('id', $deleteIds)->get();
+
+            foreach ($imagesToDelete as $galleryImage) {
+                if ($house->image && $house->image === $galleryImage->path) {
+                    $coverPathDeleted = true;
+                }
+
+                if ($galleryImage->path) {
+                    Storage::disk('public')->delete($galleryImage->path);
+                }
+                $galleryImage->delete();
+            }
+        }
+
+        foreach ($request->file('replace_images', []) as $imageId => $replacementFile) {
+            $imageId = (int) $imageId;
+
+            if ($deleteIds->contains($imageId)) {
+                continue;
+            }
+
+            $galleryImage = $house->houseImages()->where('id', $imageId)->first();
+            if (! $galleryImage) {
+                continue;
+            }
+
+            $oldPath = $galleryImage->path;
+            $newPath = $replacementFile->store('houses', 'public');
+
+            $galleryImage->update(['path' => $newPath]);
+
+            if ($house->image && $house->image === $oldPath) {
+                $validated['image'] = $newPath;
+            }
+
+            if ($oldPath && $oldPath !== $newPath) {
+                Storage::disk('public')->delete($oldPath);
+            }
+        }
+
         if ($request->hasFile('image')) {
-            if ($house->image) {
+            if ($house->image && ! $house->houseImages()->where('path', $house->image)->exists()) {
                 Storage::disk('public')->delete($house->image);
             }
-            $validated['image'] = $request->file('image')->store('houses', 'public');
+            $newCoverPath = $request->file('image')->store('houses', 'public');
+            $validated['image'] = $newCoverPath;
         }
+
+        $maxSortOrder = (int) ($house->houseImages()->max('sort_order') ?? -1);
+        foreach ($request->file('new_images', []) as $file) {
+            $storedPath = $file->store('houses', 'public');
+            $house->houseImages()->create([
+                'path' => $storedPath,
+                'sort_order' => ++$maxSortOrder,
+            ]);
+        }
+
+        if ($newCoverPath) {
+            $firstGalleryImage = $house->houseImages()->orderBy('sort_order')->orderBy('id')->first();
+
+            if ($firstGalleryImage) {
+                if ($firstGalleryImage->path && $firstGalleryImage->path !== $newCoverPath) {
+                    Storage::disk('public')->delete($firstGalleryImage->path);
+                }
+
+                $firstGalleryImage->update(['path' => $newCoverPath]);
+            } else {
+                $house->houseImages()->create([
+                    'path' => $newCoverPath,
+                    'sort_order' => 0,
+                ]);
+            }
+        }
+
+        $firstGalleryPath = $house->houseImages()->orderBy('sort_order')->orderBy('id')->value('path');
+        if ($firstGalleryPath && ! $newCoverPath) {
+            if (! empty($validated['image']) && $validated['image'] !== $firstGalleryPath) {
+                Storage::disk('public')->delete($validated['image']);
+            }
+            $validated['image'] = $firstGalleryPath;
+        } elseif (! $request->hasFile('image') && $coverPathDeleted) {
+            $validated['image'] = null;
+        }
+
+        unset($validated['new_images'], $validated['replace_images'], $validated['delete_images']);
 
         $house->update($validated);
 

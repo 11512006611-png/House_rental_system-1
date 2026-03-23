@@ -62,6 +62,25 @@
     </a>
 </div>
 
+@if($pendingMoveOutRequests->isNotEmpty())
+<div class="alert d-flex align-items-start justify-content-between gap-3 mb-3"
+     style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:12px;">
+    <div>
+        <div class="fw-bold mb-1"><i class="fas fa-bell me-2"></i>Move-Out Notification</div>
+        <div class="small mb-2">{{ $pendingMoveOutRequests->count() }} tenant request(s) to move out need your attention.</div>
+        <div class="small">
+            @foreach($pendingMoveOutRequests as $pendingMove)
+                <div>
+                    {{ $pendingMove->tenant?->name ?? 'Tenant' }} wants to move out from {{ $pendingMove->house?->title ?? 'Property' }}
+                    ({{ optional($pendingMove->move_out_date)->format('d M Y') ?? 'date not set' }}).
+                </div>
+            @endforeach
+        </div>
+    </div>
+    <a href="{{ route('owner.tenants') }}" class="btn btn-sm btn-outline-danger" style="white-space:nowrap;">Review Now</a>
+</div>
+@endif
+
 <div class="row g-3">
 
     {{-- ── Profile Card ──────────────────────────────────────────────────── --}}
@@ -361,6 +380,98 @@
             <div class="text-center py-4 text-muted" style="font-size:.85rem;">
                 <i class="fas fa-bell-slash d-block mb-2" style="font-size:1.6rem;opacity:.3;"></i>
                 No new rental requests right now.
+            </div>
+            @endif
+        </div>
+    </div>
+
+    {{-- ── Tenant Move-Out Requests ─────────────────────────────────────── --}}
+    <div class="col-12">
+        <div class="ob-card">
+            <div class="ob-card-header">
+                <h6><i class="fas fa-door-open me-2" style="color:#dc2626;"></i>Tenant Move-Out Requests</h6>
+                <a href="{{ route('owner.tenants') }}" style="font-size:.75rem;color:var(--ob-accent);">Manage tenants →</a>
+            </div>
+            @if($latestMoveOutRequests->isNotEmpty())
+            <div class="table-responsive">
+                <table class="table ob-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Tenant</th>
+                            <th>Property</th>
+                            <th>Move-Out Date</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($latestMoveOutRequests as $moveOut)
+                        @php
+                            $statusChip = [
+                                'requested' => 'chip-yellow',
+                                'approved' => 'chip-blue',
+                                'completed' => 'chip-green',
+                                'rejected' => 'chip-red',
+                            ][$moveOut->status] ?? 'chip-gray';
+                        @endphp
+                        <tr>
+                            <td>{{ $moveOut->tenant?->name ?? '—' }}</td>
+                            <td class="text-truncate" style="max-width:180px;">{{ $moveOut->house?->title ?? '—' }}</td>
+                            <td style="color:#64748b;">{{ optional($moveOut->move_out_date)->format('d M Y') ?? '—' }}</td>
+                            <td class="text-truncate" style="max-width:260px;">{{ $moveOut->reason }}</td>
+                            <td><span class="chip {{ $statusChip }}">{{ ucfirst($moveOut->status) }}</span></td>
+                            <td style="color:#b91c1c;font-weight:600;">Tenant wants to move out</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @else
+            <div class="text-center py-4 text-muted" style="font-size:.85rem;">
+                <i class="fas fa-door-closed d-block mb-2" style="font-size:1.6rem;opacity:.3;"></i>
+                No tenant move-out messages right now.
+            </div>
+            @endif
+        </div>
+    </div>
+
+    {{-- ── Moved-Out Tenant Records ─────────────────────────────────────── --}}
+    <div class="col-12">
+        <div class="ob-card">
+            <div class="ob-card-header">
+                <h6><i class="fas fa-clipboard-check me-2" style="color:#059669;"></i>Moved-Out Tenant Records</h6>
+                <a href="{{ route('owner.tenants') }}" style="font-size:.75rem;color:var(--ob-accent);">See tenants →</a>
+            </div>
+            @if($movedOutTenantRecords->isNotEmpty())
+            <div class="table-responsive">
+                <table class="table ob-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Tenant</th>
+                            <th>Property</th>
+                            <th>Requested Move-Out Date</th>
+                            <th>Completed On</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($movedOutTenantRecords as $movedOut)
+                        <tr>
+                            <td>{{ $movedOut->tenant?->name ?? '—' }}</td>
+                            <td class="text-truncate" style="max-width:200px;">{{ $movedOut->house?->title ?? '—' }}</td>
+                            <td style="color:#64748b;">{{ optional($movedOut->move_out_date)->format('d M Y') ?? '—' }}</td>
+                            <td style="color:#047857;font-weight:600;">{{ optional($movedOut->completed_at)->format('d M Y, h:i A') ?? '—' }}</td>
+                            <td class="text-truncate" style="max-width:280px;">{{ $movedOut->reason }}</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @else
+            <div class="text-center py-4 text-muted" style="font-size:.85rem;">
+                <i class="fas fa-clipboard d-block mb-2" style="font-size:1.6rem;opacity:.3;"></i>
+                No completed move-out records yet.
             </div>
             @endif
         </div>

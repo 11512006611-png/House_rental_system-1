@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Notifications\AdminCommissionReceived;
 use App\Notifications\OwnerNetPaymentReceived;
 use App\Notifications\WorkflowStatusNotification;
+use App\Services\LeaseAgreementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -245,6 +246,16 @@ class AdminController extends Controller
     public function approveProperty(House $house)
     {
         $house->update(['status' => 'available']);
+
+        $house->loadMissing('owner');
+        if ($house->owner) {
+            $house->owner->notify(new WorkflowStatusNotification(
+                'property_approved',
+                'Property Approved',
+                'Your property "' . $house->title . '" has been accepted by admin and is now live on the platform.'
+            ));
+        }
+
         return back()->with('success', "Property \"{$house->title}\" approved and is now live.");
     }
 
@@ -363,9 +374,11 @@ class AdminController extends Controller
                 'last_transaction_at' => now(),
             ]);
 
+            LeaseAgreementService::createOrRefreshAgreement($rental, $payment);
+
             $rental->update([
                 'lease_status' => 'requested',
-                'lease_requested_at' => now(),
+                'lease_requested_at' => $rental->lease_requested_at ?? now(),
             ]);
         });
 
@@ -373,7 +386,7 @@ class AdminController extends Controller
             $payment->tenant->notify(new WorkflowStatusNotification(
                 'payment_verified',
                 'Payment Verified',
-                'Your payment for ' . ($house->title ?? ('Property #' . $rental->house_id)) . ' has been verified. Waiting for final lease approval.'
+                'Your payment for ' . ($house->title ?? ('Property #' . $rental->house_id)) . ' has been verified. The digital lease agreement is now generated for signatures.'
             ));
         }
 

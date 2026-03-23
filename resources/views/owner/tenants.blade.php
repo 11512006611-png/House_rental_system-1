@@ -86,6 +86,11 @@
                     $paidCnt    = $rental->payments->where('status', 'paid')->count();
                     $pendingCnt = $rental->payments->where('status', 'pending')->count();
                     $overdueCnt = $rental->payments->where('status', 'overdue')->count();
+                    $paymentVerified = $rental->payments->where('verification_status', 'verified')->isNotEmpty();
+                    $leaseAgreement = $rental->leaseAgreement;
+                    $tenantSigned = (bool) optional($leaseAgreement)->tenant_signed_at;
+                    $ownerSigned = (bool) optional($leaseAgreement)->owner_signed_at;
+                    $bothSigned = $tenantSigned && $ownerSigned;
                     $latestMoveOut = $rental->moveOutRequests->sortByDesc('created_at')->first();
                     $statusMap  = [
                         'active'    => 'chip-green',
@@ -152,47 +157,118 @@
                         </span>
                         @if($rental->status === 'pending')
                             <div class="d-flex gap-1 mt-2 flex-wrap">
-                                <form method="POST" action="{{ route('owner.rentals.accept', $rental) }}">
-                                    @csrf
-                                    <button type="submit" class="btn btn-sm btn-success">Accept</button>
-                                </form>
-                                <form method="POST" action="{{ route('owner.rentals.reject', $rental) }}">
-                                    @csrf
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
-                                </form>
+                                <button type="button" class="btn btn-sm" 
+                                        style="background:#10b981;color:white;border-radius:8px;font-weight:600;"
+                                        data-bs-toggle="modal" data-bs-target="#acceptModal{{ $rental->id }}">
+                                    <i class="fas fa-check me-1"></i>Accept
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        style="border-radius:8px;font-weight:600;"
+                                        data-bs-toggle="modal" data-bs-target="#rejectModal{{ $rental->id }}">
+                                    <i class="fas fa-times me-1"></i>Reject
+                                </button>
+                            </div>
+                            
+                            {{-- Accept Confirmation Modal --}}
+                            <div class="modal fade" id="acceptModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
+                                <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content border-0 shadow-lg" style="border-radius:16px;">
+                                        <div class="modal-header border-0" style="background:#f0fdf4;">
+                                            <h6 class="modal-title fw-bold"><i class="fas fa-check-circle me-2" style="color:#10b981;"></i>Accept Rental Request</h6>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body" style="padding:1.5rem;">
+                                            <div class="alert alert-success d-flex gap-2">
+                                                <i class="fas fa-info-circle mt-1"></i>
+                                                <div class="small">
+                                                    <strong>Confirm Acceptance:</strong> You are accepting the rental request from <strong>{{ $tenant->name }}</strong> for <strong>{{ $house->title }}</strong>. The tenant will be notified immediately and can proceed with payment.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer border-0">
+                                            <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius:8px;">Cancel</button>
+                                            <form method="POST" action="{{ route('owner.rentals.accept', $rental) }}" style="display:inline;">
+                                                @csrf
+                                                <button type="submit" class="btn" style="background:#10b981;color:white;border-radius:8px;font-weight:600;">
+                                                    <i class="fas fa-check me-1"></i>Confirm Accept
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {{-- Reject Confirmation Modal --}}
+                            <div class="modal fade" id="rejectModal{{ $rental->id }}" tabindex="-1" aria-hidden="true">
+                                <div class="modal-dialog modal-dialog-centered">
+                                    <div class="modal-content border-0 shadow-lg" style="border-radius:16px;">
+                                        <div class="modal-header border-0" style="background:#fef2f2;">
+                                            <h6 class="modal-title fw-bold"><i class="fas fa-times-circle me-2" style="color:#dc2626;"></i>Reject Rental Request</h6>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body" style="padding:1.5rem;">
+                                            <div class="alert alert-danger d-flex gap-2">
+                                                <i class="fas fa-exclamation-triangle mt-1"></i>
+                                                <div class="small">
+                                                    <strong>Confirm Rejection:</strong> You are declining the rental request from <strong>{{ $tenant->name }}</strong> for <strong>{{ $house->title }}</strong>. The tenant will be notified about this decision.
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer border-0">
+                                            <button type="button" class="btn btn-light" data-bs-dismiss="modal" style="border-radius:8px;">Cancel</button>
+                                            <form method="POST" action="{{ route('owner.rentals.reject', $rental) }}" style="display:inline;">
+                                                @csrf
+                                                <button type="submit" class="btn btn-outline-danger" style="border-radius:8px;font-weight:600;">
+                                                    <i class="fas fa-times me-1"></i>Confirm Reject
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         @endif
                     </td>
                     <td>
                         @if($rental->lease_status === 'requested')
                             <div class="d-flex flex-column gap-2">
-                                <form method="POST" action="{{ route('owner.rentals.lease.upload', $rental) }}" enctype="multipart/form-data">
-                                    @csrf
-                                    <input type="file" name="lease_file" class="form-control form-control-sm mb-1" accept=".pdf,.jpg,.jpeg,.png" required>
-                                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">Upload Lease</button>
-                                </form>
-                                @if($rental->leaseAgreement)
+                                @if(!$leaseAgreement)
+                                    <div class="small" style="background:#ecfeff;border:1px solid #bae6fd;border-radius:8px;padding:.45rem .6rem;color:#0f172a;">
+                                        <strong>Required:</strong> Upload lease first.<br>
+                                        2-month advance: <strong>Nu {{ number_format((float) $rental->monthly_rent * 2, 0) }}</strong>
+                                    </div>
+                                    <form method="POST" action="{{ route('owner.rentals.lease.upload', $rental) }}" enctype="multipart/form-data">
+                                        @csrf
+                                        <input type="file" name="lease_file" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png" required>
+                                        <button type="submit" class="btn btn-sm btn-outline-primary w-100 mt-1">Upload Lease Agreement</button>
+                                    </form>
+                                @else
                                     <a class="btn btn-sm btn-light w-100"
-                                       href="{{ route('rentals.lease.download', $rental->leaseAgreement) }}">View Lease</a>
+                                       href="{{ route('rentals.lease.download', $leaseAgreement) }}">View Agreement PDF</a>
                                 @endif
-                                <div class="d-flex gap-1 flex-wrap">
+                                @if($paymentVerified)
+                                    <div class="small text-muted">
+                                        Tenant signature: <strong>{{ $tenantSigned ? 'Completed' : 'Pending' }}</strong><br>
+                                        Owner signature: <strong>{{ $ownerSigned ? 'Completed' : 'Pending' }}</strong>
+                                    </div>
+                                    @if(!$ownerSigned)
                                     <form method="POST" action="{{ route('owner.rentals.lease.approve', $rental) }}">
                                         @csrf
-                                        <button type="submit" class="btn btn-sm btn-success">Approve</button>
+                                        <button type="submit" class="btn btn-sm btn-success w-100">Approve Agreement</button>
                                     </form>
-                                    <form method="POST" action="{{ route('owner.rentals.lease.reject', $rental) }}">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
-                                    </form>
-                                </div>
+                                    @endif
+                                @else
+                                    <span class="chip chip-yellow">Waiting payment verification</span>
+                                @endif
                             </div>
-                        @elseif($rental->lease_status === 'approved')
-                            <span class="chip chip-green">Approved</span>
-                            @if($rental->leaseAgreement)
+                        @elseif($bothSigned && $rental->lease_status === 'approved')
+                            <span class="chip chip-green">Fully Signed</span>
+                            @if($leaseAgreement)
                                 <div class="mt-1">
-                                    <a class="btn btn-sm btn-light" href="{{ route('rentals.lease.download', $rental->leaseAgreement) }}">Lease File</a>
+                                    <a class="btn btn-sm btn-light" href="{{ route('rentals.lease.download', $leaseAgreement) }}">Agreement PDF</a>
                                 </div>
                             @endif
+                        @elseif($rental->lease_status === 'approved')
+                            <span class="chip chip-blue">Approved (signature sync pending)</span>
                         @elseif($rental->lease_status === 'rejected')
                             <span class="chip chip-red">Rejected</span>
                         @else

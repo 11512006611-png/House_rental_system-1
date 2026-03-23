@@ -47,7 +47,7 @@ class DashboardController extends Controller
             if ($rental->lease_status === 'requested') {
                 $notifications->push([
                     'type' => 'info',
-                    'message' => 'Lease agreement is awaiting owner review for "' . ($rental->house->title ?? 'selected property') . '".',
+                    'message' => 'Lease workflow is in progress for "' . ($rental->house->title ?? 'selected property') . '". Complete digital signatures once payment is verified.',
                 ]);
             }
 
@@ -58,10 +58,17 @@ class DashboardController extends Controller
                 ]);
             }
 
+            if ($rental->payments->where('verification_status', 'verified')->isNotEmpty()) {
+                $notifications->push([
+                    'type' => 'success',
+                    'message' => 'Your advance payment is completed for "' . ($rental->house->title ?? 'selected property') . '". You can now shift to this place.',
+                ]);
+            }
+
             if ($rental->leaseAgreement) {
                 $notifications->push([
                     'type' => 'info',
-                    'message' => 'Lease agreement is available for "' . ($rental->house->title ?? 'selected property') . '". You can now review and submit payment proof.',
+                    'message' => 'Digital agreement is available for "' . ($rental->house->title ?? 'selected property') . '". You can download and sign it.',
                 ]);
             }
 
@@ -114,7 +121,7 @@ class DashboardController extends Controller
         foreach ($rentals as $rental) {
             if (
                 $rental->status === 'active' &&
-                $rental->lease_status === 'not_requested' &&
+                in_array($rental->lease_status, [null, '', 'not_requested'], true) &&
                 $completedInspectionHouseIds->contains($rental->house_id)
             ) {
                 $notifications->push([

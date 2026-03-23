@@ -277,16 +277,30 @@ function renderImagePreviewState(input) {
         return;
     }
 
-    selectedImages.forEach(file => {
+    selectedImages.forEach((file, index) => {
         const reader = new FileReader();
         reader.onload = e => {
+            const item = document.createElement('div');
+            item.className = 'position-relative';
+
             const img = document.createElement('img');
             img.src = e.target.result;
             img.alt = 'Preview';
             img.className = 'img-thumbnail';
             img.style.height = '110px';
+            img.style.width = '180px';
             img.style.objectFit = 'cover';
-            previewGrid.appendChild(img);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'btn btn-sm btn-danger position-absolute top-0 end-0 m-1 py-0 px-2';
+            removeBtn.textContent = 'x';
+            removeBtn.title = 'Remove this photo';
+            removeBtn.onclick = () => removeSelectedImage(index);
+
+            item.appendChild(img);
+            item.appendChild(removeBtn);
+            previewGrid.appendChild(item);
         };
         reader.readAsDataURL(file);
     });
@@ -325,6 +339,13 @@ function previewImages(input) {
 function clearSelectedImages() {
     const input = document.getElementById('imageInput');
     selectedImages = [];
+    syncImageInputFiles(input);
+    renderImagePreviewState(input);
+}
+
+function removeSelectedImage(index) {
+    const input = document.getElementById('imageInput');
+    selectedImages = selectedImages.filter((_, i) => i !== index);
     syncImageInputFiles(input);
     renderImagePreviewState(input);
 }

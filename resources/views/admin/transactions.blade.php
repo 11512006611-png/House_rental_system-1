@@ -95,6 +95,7 @@
                     <th>Property</th>
                     <th>Owner</th>
                     <th class="text-end">Amount</th>
+                    <th class="text-center">Method</th>
                     <th class="text-center">Rate</th>
                     <th class="text-end">Commission</th>
                     <th class="text-end">Owner Share</th>
@@ -126,6 +127,18 @@
                         </div>
                     </td>
                     <td class="text-end fw-600" style="font-size:.85rem;">Nu. {{ number_format($p->amount, 0) }}</td>
+                    <td class="text-center">
+                        @php
+                            $methodLabel = match($p->payment_method) {
+                                'mbob' => 'mBoB',
+                                'mpay' => 'mPay',
+                                'bdbl' => 'BDBL',
+                                'cash' => 'Cash',
+                                default => '—',
+                            };
+                        @endphp
+                        <span class="chip chip-blue">{{ $methodLabel }}</span>
+                    </td>
                     <td class="text-center">
                         <span class="chip chip-purple">{{ $p->commission_rate ?? 0 }}%</span>
                     </td>
@@ -175,7 +188,7 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="12" class="text-center text-muted py-5">
+                    <td colspan="13" class="text-center text-muted py-5">
                         <i class="fas fa-receipt fa-2x mb-2 d-block opacity-25"></i>
                         No transactions found.
                     </td>

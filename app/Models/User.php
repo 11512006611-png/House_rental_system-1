@@ -96,4 +96,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Payment::class, 'tenant_id');
     }
+
+    public function tenantReviews()
+    {
+        return $this->hasMany(TenantReview::class);
+    }
 }

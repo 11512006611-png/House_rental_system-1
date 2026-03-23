@@ -119,21 +119,62 @@
                             <textarea name="description" class="form-control" rows="4">{{ old('description', $house->description) }}</textarea>
                         </div>
 
-                        <div class="form-section-title mt-4">Property Image</div>
+                        <div class="form-section-title mt-4">Property Images</div>
 
                         @if($house->image)
                         <div class="mb-3">
-                            <div class="small text-muted mb-2">Current image:</div>
+                            <div class="small text-muted mb-2">Current cover image:</div>
                             <img src="{{ $house->image_url }}" alt="Current" class="img-thumbnail" style="max-height:180px;">
                         </div>
                         @endif
 
+                        @if($house->houseImages->isNotEmpty())
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Existing gallery photos</label>
+                            <div class="row g-3">
+                                @foreach($house->houseImages as $galleryImage)
+                                <div class="col-md-4 col-sm-6">
+                                    <div class="border rounded p-2 h-100">
+                                        <img src="{{ asset('storage/' . $galleryImage->path) }}"
+                                             alt="Gallery image {{ $loop->iteration }}"
+                                             class="img-fluid rounded mb-2"
+                                             style="height:120px;width:100%;object-fit:cover;">
+                                        <div class="mb-2">
+                                            <label class="form-label small fw-semibold mb-1">Replace this photo</label>
+                                            <input type="file"
+                                                   name="replace_images[{{ $galleryImage->id }}]"
+                                                   class="form-control form-control-sm"
+                                                   accept="image/jpeg,image/png,image/jpg,image/webp">
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="delete_images[]" value="{{ $galleryImage->id }}" id="deleteImage{{ $galleryImage->id }}">
+                                            <label class="form-check-label small text-danger" for="deleteImage{{ $galleryImage->id }}">
+                                                Delete this photo
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                @endforeach
+                            </div>
+                            <div class="form-text">You can replace a specific photo, or tick delete for photos you want removed, then click Update Listing.</div>
+                        </div>
+                        @endif
+
                         <div class="mb-4">
-                            <label class="form-label fw-semibold">Upload New Image (optional)</label>
+                            <label class="form-label fw-semibold">Replace cover image (optional)</label>
                             <input type="file" name="image" class="form-control @error('image') is-invalid @enderror"
                                    accept="image/jpeg,image/png,image/jpg,image/webp">
-                            <div class="form-text">Leave blank to keep current image. Max 2MB.</div>
+                            <div class="form-text">Leave blank to keep the current cover image. Max 2MB.</div>
                             @error('image')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold">Upload new gallery photos (optional)</label>
+                            <input type="file" name="new_images[]" class="form-control @error('new_images') is-invalid @enderror @error('new_images.*') is-invalid @enderror"
+                                   accept="image/jpeg,image/png,image/jpg,image/webp" multiple>
+                            <div class="form-text">You can select multiple images to add different pictures.</div>
+                            @error('new_images')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            @error('new_images.*')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
 
                         <div class="d-flex gap-3 justify-content-end">
