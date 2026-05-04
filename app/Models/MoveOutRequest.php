@@ -14,6 +14,7 @@ class MoveOutRequest extends Model
         'tenant_id',
         'owner_id',
         'house_id',
+        'booking_id',
         'reason',
         'move_out_date',
         'status',
@@ -46,5 +47,10 @@ class MoveOutRequest extends Model
     public function house()
     {
         return $this->belongsTo(House::class, 'house_id');
+    }
+
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
     }
 }

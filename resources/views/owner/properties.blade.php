@@ -97,6 +97,9 @@
                 @php
                     $lease  = $house->rentals->first();
                     $tenant = $lease?->tenant;
+                    $displayStatus = in_array($house->status, ['pending', 'rejected'], true)
+                        ? $house->status
+                        : ($lease ? 'rented' : 'available');
                     $statusColors = [
                         'available' => 'chip-green',
                         'rented'    => 'chip-blue',
@@ -125,6 +128,13 @@
                                 <div style="font-size:.7rem;color:#94a3b8;">
                                     {{ $house->bedrooms }}bd · {{ $house->bathrooms }}ba
                                 </div>
+                                @if(in_array($house->status, ['pending', 'rejected'], true))
+                                <div style="font-size:.7rem;color:#475569;" class="mt-1">
+                                    <i class="fas fa-calendar-alt me-1"></i>
+                                    Inspection:
+                                    {{ $house->inspection_scheduled_at ? $house->inspection_scheduled_at->format('d M Y, h:i A') : 'Waiting for admin schedule' }}
+                                </div>
+                                @endif
                             </div>
                         </div>
                     </td>
@@ -156,23 +166,34 @@
                     </td>
                     {{-- Status --}}
                     <td>
-                        <span class="chip {{ $statusColors[$house->status] ?? 'chip-gray' }}">
-                            {{ ucfirst($house->status) }}
+                        <span class="chip {{ $statusColors[$displayStatus] ?? 'chip-gray' }}">
+                            {{ ucfirst($displayStatus) }}
                         </span>
+                        @if(!in_array($displayStatus, ['pending', 'rejected'], true))
+                        <div style="font-size:.68rem;color:#64748b;" class="mt-1">Admin managed</div>
+                        @endif
                     </td>
                     {{-- Actions --}}
                     <td>
+                        @php
+                            $hasActiveRental = $house->rentals->isNotEmpty();
+                            $canDelete = $displayStatus !== 'rented' && ! $hasActiveRental;
+                            $canEdit = ! $hasActiveRental;
+                        @endphp
                         <div class="d-flex justify-content-end gap-1">
                             <a href="{{ route('houses.show', $house) }}"
                                class="btn btn-sm btn-light" style="border-radius:7px;font-size:.75rem;"
                                title="View">
                                 <i class="fas fa-eye"></i>
                             </a>
+                            @if($canEdit)
                             <a href="{{ route('houses.edit', $house) }}"
                                class="btn btn-sm" style="border-radius:7px;font-size:.75rem;background:#dbeafe;color:#1d4ed8;border:none;"
-                               title="Edit">
+                               title="Edit / Adjust">
                                 <i class="fas fa-pen"></i>
                             </a>
+                            @endif
+                            @if($canDelete)
                             <form action="{{ route('houses.destroy', $house) }}" method="POST"
                                   onsubmit="return confirm('Delete this property? This cannot be undone.')">
                                 @csrf @method('DELETE')
@@ -181,6 +202,14 @@
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </form>
+                            @else
+                            <button type="button" class="btn btn-sm" disabled
+                                    title="Delete is unavailable while this property has an active tenant."
+                                    style="border-radius:7px;font-size:.75rem;background:#f1f5f9;color:#94a3b8;border:none;cursor:not-allowed;"
+                                    aria-disabled="true">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            @endif
                         </div>
                     </td>
                 </tr>

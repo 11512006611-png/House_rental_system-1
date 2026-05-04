@@ -100,14 +100,15 @@
                 <tr>
                     <th>Tenant</th>
                     <th>Property</th>
+                    <th>Type</th>
                     <th>Method</th>
                     <th>Amount</th>
                     <th>Owner Share</th>
+                    <th>Billing Month</th>
                     <th>Payment Date</th>
                     <th>Proof</th>
                     <th>Status</th>
                     <th>Verification</th>
-                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -136,12 +137,16 @@
                     <td style="font-size:.82rem;">
                         <div class="fw-500">{{ $pay->rental?->house?->title ?? '—' }}</div>
                     </td>
+                    <td style="font-size:.82rem;">
+                        <span class="chip chip-blue">{{ $pay->paymentTypeLabel() }}</span>
+                    </td>
                     <td>
                         @php
                             $methodLabel = match($pay->payment_method) {
                                 'mbob' => 'mBoB',
                                 'mpay' => 'mPay',
                                 'bdbl' => 'BDBL',
+                                'dkbnb' => 'DK BNB',
                                 'cash' => 'Cash',
                                 default => '—',
                             };
@@ -154,6 +159,9 @@
                     </td>
                     <td class="fw-600" style="font-size:.82rem;color:#2563eb;">
                         Nu {{ number_format((float)($pay->owner_share_amount ?? 0), 0) }}
+                    </td>
+                    <td style="font-size:.82rem;color:#475569;">
+                        {{ $pay->billingMonthLabel() }}
                     </td>
                     {{-- Payment Date --}}
                     <td style="font-size:.82rem;color:#475569;">
@@ -182,28 +190,6 @@
                             <span class="chip chip-red">Rejected</span>
                         @else
                             <span class="chip chip-yellow">Pending</span>
-                        @endif
-                    </td>
-                    <td>
-                        @if($pay->verification_status === 'pending')
-                            <div class="d-flex gap-1 flex-wrap">
-                                <form method="POST" action="{{ route('owner.payments.verify', $pay) }}">
-                                    @csrf
-                                    <input type="hidden" name="status" value="verified">
-                                    <input type="hidden" name="notes" value="Owner confirmed advance payment completion.">
-                                    <button type="submit" class="btn btn-sm btn-success">Confirm Payment</button>
-                                </form>
-                                <form method="POST" action="{{ route('owner.payments.verify', $pay) }}">
-                                    @csrf
-                                    <input type="hidden" name="status" value="rejected">
-                                    <input type="hidden" name="notes" value="Owner rejected payment proof.">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
-                                </form>
-                            </div>
-                        @elseif($pay->verification_status === 'verified')
-                            <span class="chip chip-green">Completed</span>
-                        @else
-                            <span class="chip chip-red">Rejected</span>
                         @endif
                     </td>
                 </tr>

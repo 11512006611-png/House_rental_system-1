@@ -28,6 +28,20 @@
                     <form action="{{ route('houses.update', $house) }}" method="POST" enctype="multipart/form-data">
                         @csrf @method('PUT')
 
+                        @if(request('from') === 'admin-property-show' && auth()->user()?->role === 'admin')
+                            <input type="hidden" name="return_to" value="admin-property-show">
+                        @endif
+
+                        @if(auth()->user()?->role === 'admin')
+                            <div class="alert alert-info small" role="alert">
+                                You are editing this listing as admin. Image and detail updates are saved immediately. If this property is pending or rejected, return to the admin property page to publish after inspection.
+                            </div>
+                        @else
+                            <div class="alert alert-info small" role="alert">
+                                After you update this listing, it will be reviewed by admin before being visible to tenants.
+                            </div>
+                        @endif
+
                         <div class="form-section-title">Basic Information</div>
 
                         <div class="mb-3">
@@ -103,14 +117,6 @@
                                 <label class="form-label fw-semibold">Floor Area</label>
                                 <input type="text" name="area" class="form-control"
                                        value="{{ old('area', $house->area) }}" placeholder="e.g. 850 sq.ft">
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label fw-semibold">Status <span class="text-danger">*</span></label>
-                                <select name="status" class="form-select" required>
-                                    <option value="available" {{ old('status', $house->status) == 'available' ? 'selected' : '' }}>Available</option>
-                                    <option value="rented" {{ old('status', $house->status) == 'rented' ? 'selected' : '' }}>Rented</option>
-                                    <option value="pending" {{ old('status', $house->status) == 'pending' ? 'selected' : '' }}>Pending</option>
-                                </select>
                             </div>
                         </div>
 

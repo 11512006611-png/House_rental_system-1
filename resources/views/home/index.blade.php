@@ -11,10 +11,15 @@
         <div class="row justify-content-center text-center">
             <div class="col-lg-9">
                 <div class="hero-badge mb-3">
-                    <img src="https://flagcdn.com/20x15/bt.png" alt="Bhutan"> &nbsp;Kingdom of Bhutan
+                    <span class="hero-badge-flag" aria-hidden="true">
+                        <img src="https://flagcdn.com/w80/bt.png" alt="Bhutan Flag" class="img-fluid" loading="lazy" decoding="async">
+                    </span>
+                    <span class="hero-badge-text">Kingdom of Bhutan</span>
                 </div>
                 <h1 class="hero-title">Find Your Perfect Home<br><span class="text-hrs-highlight">in Bhutan</span></h1>
-                <p class="hero-subtitle">Discover comfortable houses, apartments, and villas across all Dzongkhags. Trusted by thousands of families in the Land of the Thunder Dragon.</p>
+                <p class="hero-subtitle mb-4">Discover verified rental homes across all 20 Dzongkhags. Your next home is just a few clicks away.</p>
+
+            
 
                 <!-- Hero CTA Buttons -->
                 <div class="d-flex flex-wrap justify-content-center gap-3 mb-4">
@@ -36,7 +41,7 @@
                     </div>
                     <div class="hero-stat-divider"></div>
                     <div class="hero-stat">
-                        <span class="stat-num">20+</span>
+                        <span class="stat-num">20</span>
                         <span class="stat-label">Dzongkhags</span>
                     </div>
                     <div class="hero-stat-divider"></div>
@@ -96,7 +101,7 @@
                     </div>
                     <h5 class="benefit-card-title">Easy Rental</h5>
                     <p class="benefit-card-text">
-                        Request a rental, track your application, and manage your agreement — all in one place.
+                        From booking and tenant communication to rental agreements and payments, the admin manages each step in one secure workflow.
                     </p>
                 </div>
             </div>
@@ -109,7 +114,7 @@
                     </div>
                     <h5 class="benefit-card-title">24 / 7 Support</h5>
                     <p class="benefit-card-text">
-                        Our dedicated support team is ready to assist landlords and tenants across all Dzongkhags.
+                        Tenants and owners receive continuous support while the admin oversees approvals, coordination, and successful rental completion.
                     </p>
                 </div>
             </div>
@@ -126,7 +131,7 @@
             <!-- Image -->
             <div class="col-lg-5">
                 <div class="experience-img-wrap">
-                    <img src="https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=600&auto=format&fit=crop" alt="Interior" class="experience-img">
+                    <img src="{{ asset('images/experience-bhutan-night.jpg') }}" alt="Bhutan Night City" class="experience-img" loading="lazy" decoding="async">
                     <div class="experience-img-dot experience-img-dot--tl"></div>
                     <div class="experience-img-dot experience-img-dot--br"></div>
                 </div>
@@ -152,7 +157,7 @@
                         <span class="exp-label">Houses<br>Listed</span>
                     </div>
                     <div class="experience-stat">
-                        <span class="exp-num">20+</span>
+                        <span class="exp-num">20</span>
                         <span class="exp-label">Dzongkhags<br>Covered</span>
                     </div>
                 </div>

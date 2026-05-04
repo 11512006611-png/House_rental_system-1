@@ -4,30 +4,46 @@ namespace App\Http\Controllers;
 
 use App\Models\House;
 use App\Models\TenantReview;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class HomeController extends Controller
 {
     public function index()
     {
-        $totalHouses = House::available()->count();
+        $totalHouses = 0;
+        $tenantReviews = collect();
 
-        $tenantReviews = TenantReview::with('user:id,name,role')
-            ->where('is_visible', true)
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->take(9)
-            ->get()
-            ->map(function ($review) {
-                return (object) [
-                    'title' => $review->title,
-                    'message' => $review->message,
-                    'name' => $review->user->name ?? 'Anonymous Tenant',
-                    'location' => $review->location ?: 'Bhutan',
-                    'avatarColor' => null,
-                    'created_at' => $review->created_at,
-                ];
-            });
+        try {
+            $totalHouses = House::available()->count();
+        } catch (Throwable $e) {
+            Log::warning('Home page house count unavailable.', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $tenantReviews = TenantReview::with('user:id,name,role')
+                ->where('is_visible', true)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->take(9)
+                ->get()
+                ->map(function ($review) {
+                    return (object) [
+                        'title' => $review->title,
+                        'message' => $review->message,
+                        'name' => $review->user->name ?? 'Anonymous Tenant',
+                        'location' => $review->location ?: 'Bhutan',
+                        'avatarColor' => null,
+                        'created_at' => $review->created_at,
+                    ];
+                });
+        } catch (Throwable $e) {
+            Log::warning('Home page tenant reviews unavailable.', [
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         $exampleReviews = collect([
             (object) [

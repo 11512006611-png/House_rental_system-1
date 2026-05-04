@@ -21,9 +21,14 @@ class LeaseAgreementService
     /**
      * Create or refresh lease agreement after successful payment verification.
      */
-    public static function createOrRefreshAgreement(Rental $rental, Payment $payment): LeaseAgreement
+    public static function createOrRefreshAgreement(Rental $rental, Payment $payment = null): LeaseAgreement
     {
         $rental->loadMissing(['tenant', 'house.owner', 'house.locationModel']);
+
+        // Calculate total advance amount from all verified payments for this rental
+        $totalAdvanceAmount = $rental->payments()
+            ->where('verification_status', 'verified')
+            ->sum('amount');
 
         $agreement = LeaseAgreement::updateOrCreate(
             ['rental_id' => $rental->id],
@@ -33,8 +38,12 @@ class LeaseAgreementService
                 'tenant_id' => $rental->tenant_id,
                 'house_id' => $rental->house_id,
                 'monthly_rent' => (float) $rental->monthly_rent,
-                'deposit_amount' => (float) $payment->amount,
-                'payment_status' => $payment->status === 'paid' ? 'paid' : 'pending',
+                'deposit_amount' => $totalAdvanceAmount,
+                'security_deposit_amount' => $rental->payments()
+                    ->where('payment_type', 'security_deposit')
+                    ->where('verification_status', 'verified')
+                    ->sum('amount'),
+                'payment_status' => $totalAdvanceAmount > 0 ? 'paid' : 'pending',
                 'lease_start_date' => $rental->rental_date,
                 'lease_end_date' => $rental->end_date,
                 'generated_at' => now(),

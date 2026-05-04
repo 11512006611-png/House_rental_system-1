@@ -105,8 +105,17 @@
                     <td class="text-muted small">{{ $loop->iteration }}</td>
                     <td>
                         <div class="d-flex align-items-center gap-2">
-                            <div class="u-avatar" style="background:#fef9c3;color:#a16207;">{{ strtoupper(substr($u->name, 0, 1)) }}</div>
-                            <span class="fw-600" style="font-size:.85rem;">{{ $u->name }}</span>
+                            @if($u->profile_image_url)
+                                <img src="{{ $u->profile_image_url }}" alt="{{ $u->name }}" class="u-avatar" style="object-fit:cover;">
+                            @else
+                                <div class="u-avatar" style="background:#fef9c3;color:#a16207;">{{ strtoupper(substr($u->name, 0, 1)) }}</div>
+                            @endif
+                            <div>
+                                <div class="fw-600" style="font-size:.85rem;">{{ $u->name }}</div>
+                                @if($u->username)
+                                    <div class="text-muted" style="font-size:.72rem;">@{{ $u->username }}</div>
+                                @endif
+                            </div>
                         </div>
                     </td>
                     <td class="text-muted small">{{ $u->email }}</td>
@@ -138,6 +147,12 @@
                     <td class="text-center text-muted small">{{ $u->created_at->format('d M Y') }}</td>
                     <td class="text-center">
                         <div class="d-flex gap-1 justify-content-center flex-wrap">
+                            <a href="{{ route('admin.users.show', $u->id) }}"
+                               class="btn btn-xs btn-outline-primary"
+                               style="font-size:.72rem;padding:.2rem .5rem;"
+                               title="View profile">
+                                <i class="fas fa-eye me-1"></i>Profile
+                            </a>
                             @if($s === 'suspended')
                             <form action="{{ route('admin.users.activate', $u->id) }}" method="POST" class="m-0">
                                 @csrf
@@ -177,6 +192,30 @@
                             </form>
                             @else
                             <span class="text-muted small">—</span>
+                            @endif
+
+                            @if($u->role === 'tenant')
+                                @if(($u->rentals_count ?? 0) > 0)
+                                    <button type="button"
+                                        class="btn btn-xs btn-outline-danger"
+                                        style="font-size:.72rem;padding:.2rem .5rem;"
+                                        title="Cannot delete tenant with rentals"
+                                        disabled>
+                                        <i class="fas fa-trash me-1"></i>Delete
+                                    </button>
+                                @else
+                                    <form action="{{ route('admin.users.delete', $u->id) }}" method="POST" class="m-0">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit"
+                                            class="btn btn-xs btn-outline-danger"
+                                            style="font-size:.72rem;padding:.2rem .5rem;"
+                                            onclick="return confirm('Delete tenant {{ addslashes($u->name) }} permanently? This cannot be undone.')"
+                                            title="Delete tenant account">
+                                            <i class="fas fa-trash me-1"></i>Delete
+                                        </button>
+                                    </form>
+                                @endif
                             @endif
                         </div>
                     </td>

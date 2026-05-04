@@ -50,18 +50,33 @@
                         <i class="fas fa-map-marker-alt text-hrs-primary me-1"></i>
                         {{ $house->location }}
                     </p>
+                    @if(in_array($house->status, ['pending', 'rejected'], true))
+                    <p class="small text-muted mb-2">
+                        <i class="fas fa-calendar-alt me-1"></i>
+                        Inspection:
+                        {{ $house->inspection_scheduled_at ? $house->inspection_scheduled_at->format('d M Y, h:i A') : 'Waiting for admin schedule' }}
+                    </p>
+                    @endif
                     <div class="house-card-features">
                         <span><i class="fas fa-bed"></i> {{ $house->bedrooms }}</span>
                         <span><i class="fas fa-bath"></i> {{ $house->bathrooms }}</span>
                     </div>
+                    @if(!in_array($house->status, ['pending', 'rejected'], true))
+                    <div class="small text-muted mt-2">
+                        <i class="fas fa-shield-alt me-1"></i>
+                        This property is now managed by admin.
+                    </div>
+                    @endif
                     <div class="d-flex gap-2 mt-3">
                         <a href="{{ route('houses.show', $house) }}" class="btn btn-hrs-outline flex-fill btn-sm">View</a>
+                        @if(in_array($house->status, ['pending', 'rejected'], true))
                         <a href="{{ route('houses.edit', $house) }}" class="btn btn-outline-primary flex-fill btn-sm">Edit</a>
                         <form action="{{ route('houses.destroy', $house) }}" method="POST"
                               onsubmit="return confirm('Delete this listing?')" class="flex-fill">
                             @csrf @method('DELETE')
                             <button type="submit" class="btn btn-outline-danger w-100 btn-sm">Delete</button>
                         </form>
+                        @endif
                     </div>
                 </div>
             </div>

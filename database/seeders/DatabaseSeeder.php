@@ -9,28 +9,17 @@ use App\Models\Rental;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // Seed Bhutan Dzongkhags (Districts)
-        $dzongkhags = [
-            'Bumthang', 'Chhukha', 'Dagana', 'Gasa', 'Haa',
-            'Lhuntse', 'Mongar', 'Paro', 'Pema Gatshel', 'Punakha',
-            'Samdrup Jongkhar', 'Samtse', 'Sarpang', 'Thimphu',
-            'Trashigang', 'Trashiyangtse', 'Trongsa', 'Tsirang',
-            'Wangdue Phodrang', 'Zhemgang',
-        ];
-
-        $locations = [];
-        foreach ($dzongkhags as $name) {
-            $locations[$name] = Location::create([
-                'dzongkhag_name' => $name,
-                'slug'           => Str::slug($name),
-            ]);
-        }
+        // Seed Bhutan Dzongkhags (Districts) first.
+        $this->call(LocationSeeder::class);
+        $locations = Location::query()
+            ->whereIn('dzongkhag_name', Location::dzongkhags())
+            ->get()
+            ->keyBy('dzongkhag_name');
 
         // Seed Users
         $admin = User::create([

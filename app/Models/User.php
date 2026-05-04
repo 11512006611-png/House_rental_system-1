@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Payment;
 
@@ -14,10 +15,15 @@ class User extends Authenticatable
 
     protected $fillable = [
         'name',
+        'username',
         'email',
         'password',
         'role',
         'phone',
+        'profile_image',
+        'gender',
+        'date_of_birth',
+        'current_address',
         'status',
         'bank_name',
         'account_number',
@@ -32,6 +38,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'date_of_birth' => 'date',
         'password' => 'hashed',
     ];
 
@@ -43,6 +50,26 @@ class User extends Authenticatable
     public function rentals()
     {
         return $this->hasMany(Rental::class, 'tenant_id');
+    }
+
+    public function inspectionRequestsAsTenant()
+    {
+        return $this->hasMany(Inspection::class, 'tenant_id');
+    }
+
+    public function inspectionRequestsHandledByAdmin()
+    {
+        return $this->hasMany(Inspection::class, 'handled_by_admin_id');
+    }
+
+    public function bookingsAsTenant()
+    {
+        return $this->hasMany(Booking::class, 'tenant_id');
+    }
+
+    public function bookingsAsOwner()
+    {
+        return $this->hasMany(Booking::class, 'owner_id');
     }
 
     public function isAdmin(): bool
@@ -97,8 +124,27 @@ class User extends Authenticatable
         return $this->hasMany(Payment::class, 'tenant_id');
     }
 
+    public function refunds()
+    {
+        return $this->hasMany(Refund::class, 'tenant_id');
+    }
+
+    public function processedRefunds()
+    {
+        return $this->hasMany(Refund::class, 'processed_by_admin_id');
+    }
+
     public function tenantReviews()
     {
         return $this->hasMany(TenantReview::class);
+    }
+
+    public function getProfileImageUrlAttribute(): ?string
+    {
+        if (! $this->profile_image) {
+            return null;
+        }
+
+        return Storage::url($this->profile_image);
     }
 }

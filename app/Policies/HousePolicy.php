@@ -9,11 +9,35 @@ class HousePolicy
 {
     public function update(User $user, House $house): bool
     {
-        return $user->id === $house->owner_id || $user->isAdmin();
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        if ($user->id !== $house->owner_id) {
+            return false;
+        }
+
+        $hasActiveRental = $house->rentals()->where('status', 'active')->exists();
+
+        return ! $hasActiveRental;
     }
 
     public function delete(User $user, House $house): bool
     {
-        return $user->id === $house->owner_id || $user->isAdmin();
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        if ($user->id !== $house->owner_id) {
+            return false;
+        }
+
+        if ($house->status === 'rented') {
+            return false;
+        }
+
+        $hasActiveRental = $house->rentals()->where('status', 'active')->exists();
+
+        return ! $hasActiveRental;
     }
 }

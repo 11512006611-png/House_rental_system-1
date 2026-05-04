@@ -197,13 +197,12 @@
     $__ownerPendingProps = \App\Models\House::where('owner_id', auth()->id())->where('status', 'pending')->count();
     $__pendingRentals    = \App\Models\Rental::whereIn('house_id', \App\Models\House::where('owner_id', auth()->id())->pluck('id'))->where('status', 'pending')->count();
     $__overduePayments   = \App\Models\Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', \App\Models\House::where('owner_id', auth()->id())->pluck('id')))->where('status', 'overdue')->count();
-        $__leaseUploadQueue  = \App\Models\Rental::whereIn('house_id', \App\Models\House::where('owner_id', auth()->id())->pluck('id'))
-            ->where('status', 'active')
-            ->where('lease_status', 'requested')
-            ->whereDoesntHave('leaseAgreement')
-            ->count();
     $__pendingMoveOuts   = \App\Models\MoveOutRequest::where('owner_id', auth()->id())->whereIn('status', ['requested', 'approved'])->count();
-        $__notifTotal        = $__ownerPendingProps + $__pendingRentals + $__leaseUploadQueue + $__overduePayments + $__pendingMoveOuts;
+    $__workflowUnreadCount = auth()->check() ? auth()->user()->unreadNotifications()->count() : 0;
+    $__workflowUnreadItems = auth()->check()
+        ? auth()->user()->unreadNotifications()->latest()->take(5)->get()
+        : collect();
+    $__notifTotal        = $__ownerPendingProps + $__pendingRentals + $__overduePayments + $__pendingMoveOuts + $__workflowUnreadCount;
 @endphp
 
 <div class="d-flex" id="ownerWrapper">
@@ -278,25 +277,18 @@
                 <span class="badge" style="background:#ef4444;">{{ $__overduePayments }}</span>
                 @endif
             </a>
-                <a href="{{ route('owner.tenants', ['lease_queue' => 1]) }}"
-                   class="ob-nav-link {{ request()->routeIs('owner.tenants') && request('lease_queue') ? 'active' : '' }}">
-                    <span class="icon"><i class="fas fa-file-signature"></i></span>
-                    Lease Agreements
-                    @if($__leaseUploadQueue > 0)
-                    <span class="badge" style="background:#0ea5e9;">{{ $__leaseUploadQueue }}</span>
-                    @endif
-                </a>
-            @php $__pendingInspections = \App\Models\Inspection::whereHas('house', fn($q) => $q->where('owner_id', auth()->id()))->where('status','pending')->count(); @endphp
-            <a href="{{ route('owner.inspections') }}"
-               class="ob-nav-link {{ request()->routeIs('owner.inspections') ? 'active' : '' }}">
-                <span class="icon"><i class="fas fa-clipboard-check"></i></span>
-                Inspections
-                @if($__pendingInspections > 0)
-                <span class="badge" style="background:#8b5cf6;">{{ $__pendingInspections }}</span>
-                @endif
+            <a href="{{ route('owner.earnings') }}"
+               class="ob-nav-link {{ request()->routeIs('owner.earnings') ? 'active' : '' }}">
+                <span class="icon"><i class="fas fa-chart-line"></i></span>
+                Monthly Earnings
             </a>
 
             <div class="ob-nav-section">Account</div>
+                <a href="{{ route('profile.show') }}"
+                    class="ob-nav-link {{ request()->routeIs('profile.*') ? 'active' : '' }}">
+                     <span class="icon"><i class="fas fa-id-card"></i></span>
+                     My Profile
+                </a>
             <a href="{{ route('houses.index') }}"
                class="ob-nav-link">
                 <span class="icon"><i class="fas fa-globe"></i></span>
@@ -312,7 +304,11 @@
         {{-- Sidebar Footer: Logout --}}
         <div class="ob-sidebar-footer">
             <div class="d-flex align-items-center gap-2 mb-3">
-                <div class="ob-avatar">{{ strtoupper(substr(Auth::user()->name, 0, 1)) }}</div>
+                @if(Auth::user()->profile_image_url)
+                    <img src="{{ Auth::user()->profile_image_url }}" alt="User avatar" class="ob-avatar" style="object-fit:cover;">
+                @else
+                    <div class="ob-avatar">{{ strtoupper(substr(Auth::user()->username ?: Auth::user()->name, 0, 1)) }}</div>
+                @endif
                 <div style="overflow:hidden;">
                     <div class="text-white fw-semibold text-truncate" style="font-size:.8rem;">{{ Auth::user()->name }}</div>
                     <div style="font-size:.67rem;color:rgba(255,255,255,.45);">Property Owner</div>
@@ -361,9 +357,36 @@
                     @endif
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow-sm" style="min-width:270px;border-radius:12px;border:1px solid #e2e8f0;">
-                    <li class="px-3 py-2 border-bottom">
+                    <li class="px-3 py-2 border-bottom d-flex align-items-center justify-content-between gap-2">
                         <span class="fw-700" style="font-size:.8rem;color:#0f172a;">Notifications</span>
                     </li>
+                    @if($__workflowUnreadItems->isNotEmpty())
+                    <li class="px-3 pt-2 pb-1" style="font-size:.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">
+                        Workflow Alerts
+                    </li>
+                    @foreach($__workflowUnreadItems as $__note)
+                    @php
+                        $__type = $__note->data['type'] ?? null;
+                        $__title = $__note->data['title'] ?? 'Update';
+                        $__message = $__note->data['message'] ?? 'You have a new update.';
+
+                        $__target = match ($__type) {
+                            'payment_submitted', 'payment_pending_verification', 'advance_payment_completed', 'advance_payment_rejected' => route('owner.payments'),
+                            'tenant_confirmed_stay', 'lease_sent', 'agreement_accepted_by_tenant' => route('owner.tenants', ['lease_queue' => 1]),
+                            'move_out_requested', 'move_out_approved', 'move_out_completed', 'move_out_rejected' => route('owner.tenants', ['move_out' => 1]),
+                            default => route('owner.dashboard'),
+                        };
+                    @endphp
+                    <li>
+                        <a href="{{ $__target }}" class="dropdown-item py-2" style="white-space:normal;line-height:1.3;">
+                            <div class="fw-semibold" style="font-size:.76rem;color:#0f172a;">{{ $__title }}</div>
+                            <div style="font-size:.72rem;color:#475569;">{{ \Illuminate\Support\Str::limit($__message, 95) }}</div>
+                            <div style="font-size:.66rem;color:#94a3b8;">{{ $__note->created_at?->diffForHumans() }}</div>
+                        </a>
+                    </li>
+                    @endforeach
+                    <li><hr class="dropdown-divider my-1"></li>
+                    @endif
                     @if($__ownerPendingProps > 0)
                     <li>
                         <a href="{{ route('owner.properties') }}?status=pending" class="dropdown-item d-flex align-items-center gap-2 py-2" style="font-size:.8rem;">
@@ -409,12 +432,27 @@
                         <i class="fas fa-circle-check text-success me-1"></i> All caught up!
                     </li>
                     @endif
+                    @if($__workflowUnreadCount > 0)
+                    <li><hr class="dropdown-divider my-1"></li>
+                    <li class="px-3 py-2">
+                        <form action="{{ route('owner.notifications.clear') }}" method="POST" class="m-0">
+                            @csrf
+                            <button type="submit" class="btn btn-sm btn-outline-secondary w-100" style="font-size:.72rem;">
+                                <i class="fas fa-broom me-1"></i>Clear All
+                            </button>
+                        </form>
+                    </li>
+                    @endif
                 </ul>
             </div>
 
             {{-- User info --}}
             <div class="d-flex align-items-center gap-2 ms-1">
-                <div class="ob-avatar">{{ strtoupper(substr(Auth::user()->name, 0, 1)) }}</div>
+                @if(Auth::user()->profile_image_url)
+                    <img src="{{ Auth::user()->profile_image_url }}" alt="User avatar" class="ob-avatar" style="object-fit:cover;">
+                @else
+                    <div class="ob-avatar">{{ strtoupper(substr(Auth::user()->username ?: Auth::user()->name, 0, 1)) }}</div>
+                @endif
                 <div class="d-none d-md-block">
                     <div class="fw-600" style="font-size:.82rem;color:#0f172a;line-height:1.2;">{{ Auth::user()->name }}</div>
                     <div style="font-size:.68rem;color:#94a3b8;">Property Owner</div>

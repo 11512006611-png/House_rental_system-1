@@ -23,12 +23,12 @@
         body{font-family:'Inter',sans-serif;background:#f1f5f9;color:#1e293b;}
 
         /* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-        .admin-sidebar{width:var(--sidebar-width);min-height:100vh;background:var(--sidebar-bg);
+        .admin-sidebar{width:var(--sidebar-width);height:100vh;background:var(--sidebar-bg);
             position:fixed;top:0;left:0;z-index:1030;display:flex;flex-direction:column;
-            overflow-y:auto;transition:transform .3s ease;scrollbar-width:thin;
+            overflow:hidden;transition:transform .3s ease;scrollbar-width:thin;
             scrollbar-color:rgba(255,255,255,.1) transparent;}
         .sidebar-brand{padding:1.2rem 1.4rem .9rem;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;}
-        .sidebar-nav{padding:.5rem 0;flex:1;}
+        .sidebar-nav{padding:.5rem 0;flex:1;overflow-y:auto;min-height:0;}
         .sidebar-section{font-size:.6rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
             color:rgba(255,255,255,.25);padding:.9rem 1.4rem .25rem;}
         .admin-sidebar .nav-link{display:flex;align-items:center;gap:.7rem;padding:.58rem 1.4rem;
@@ -39,7 +39,12 @@
         .admin-sidebar .nav-link.active{color:#fff;background:var(--sidebar-active);border-left-color:var(--accent);}
         .nav-icon{width:18px;text-align:center;flex-shrink:0;font-size:.88rem;}
         .nav-badge{margin-left:auto;}
-        .sidebar-footer{padding:.9rem 1.4rem;border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;}
+        .sidebar-footer{padding:.9rem 1.4rem;border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;
+            background:var(--sidebar-bg);}
+        .sidebar-logout-btn{margin-top:.7rem;display:flex;align-items:center;justify-content:center;gap:.5rem;
+            width:100%;padding:.52rem .7rem;border:1px solid rgba(248,113,113,.45);border-radius:9px;
+            background:rgba(239,68,68,.12);color:#fecaca;font-size:.8rem;font-weight:600;}
+        .sidebar-logout-btn:hover{background:rgba(239,68,68,.2);color:#fff;}
 
         /* â”€â”€ Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
         .admin-content{margin-left:var(--sidebar-width);min-height:100vh;display:flex;flex-direction:column;}
@@ -130,12 +135,22 @@
     $__pendingU = \App\Models\User::where('status','pending')->count();
     $__pendingP = \App\Models\House::where('status','pending')->count();
     $__pendingR = \App\Models\Rental::where('status','pending')->count();
-    $__notifTotal = $__pendingU + $__pendingP + $__pendingR;
+    $__pendingI = \App\Models\Inspection::where('status','pending')->count();
+    $__pendingA = \App\Models\Rental::where('lease_status','pending')->count();
+    $__pendingPay = \App\Models\Payment::where('verification_status','pending')->count();
+    $__pendingC = \App\Models\MaintenanceRequest::where('status','pending')->count();
+    $__pendingMO = \App\Models\MoveOutRequest::whereIn('status',['requested','approved'])->count();
+    $__notifTotal = $__pendingU + $__pendingP + $__pendingR + $__pendingI + $__pendingA + $__pendingPay + $__pendingC + $__pendingMO;
 
     // For dropdown: last 4 of each
     $__notifUsers = \App\Models\User::where('status','pending')->orderByDesc('created_at')->limit(4)->get();
     $__notifProps = \App\Models\House::where('status','pending')->with('owner')->orderByDesc('created_at')->limit(4)->get();
     $__notifRents = \App\Models\Rental::where('status','pending')->with(['house','tenant'])->orderByDesc('created_at')->limit(3)->get();
+    $__notifInspections = \App\Models\Inspection::where('status','pending')->with(['house','tenant'])->orderByDesc('created_at')->limit(2)->get();
+    $__notifAgreements = \App\Models\Rental::where('lease_status','pending')->with(['house','tenant'])->orderByDesc('created_at')->limit(2)->get();
+    $__notifPayments = \App\Models\Payment::where('verification_status','pending')->with(['rental.house','tenant'])->orderByDesc('created_at')->limit(2)->get();
+    $__notifComplaints = \App\Models\MaintenanceRequest::where('status','pending')->with(['rental.house','rental.tenant'])->orderByDesc('created_at')->limit(2)->get();
+    $__notifMoveOuts = \App\Models\MoveOutRequest::whereIn('status',['requested','approved'])->with(['rental.house','rental.tenant'])->orderByDesc('created_at')->limit(2)->get();
 @endphp
 
 <div class="d-flex" id="adminWrapper">
@@ -159,12 +174,12 @@
 
         <div class="sidebar-section">Overview</div>
         <a href="{{ route('admin.dashboard') }}"   class="nav-link {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
-            <span class="nav-icon"><i class="fas fa-gauge-high"></i></span> Dashboard
+            <span class="nav-icon"><i class="fas fa-gauge-high"></i></span> 🏠 Dashboard
         </a>
 
         <div class="sidebar-section mt-1">Users</div>
         <a href="{{ route('admin.users') }}"   class="nav-link {{ request()->routeIs('admin.users') ? 'active' : '' }}">
-            <span class="nav-icon"><i class="fas fa-users-gear"></i></span> All Users
+            <span class="nav-icon"><i class="fas fa-users-gear"></i></span> 👤 Users
         </a>
         <a href="{{ route('admin.pending') }}" class="nav-link {{ request()->routeIs('admin.pending') ? 'active' : '' }}">
             <span class="nav-icon"><i class="fas fa-user-clock"></i></span> Pending Approvals
@@ -181,49 +196,96 @@
 
         <div class="sidebar-section mt-1">Properties</div>
         <a href="{{ route('admin.properties') }}" class="nav-link {{ request()->routeIs('admin.properties') ? 'active' : '' }}">
-            <span class="nav-icon"><i class="fas fa-building"></i></span> All Properties
+            <span class="nav-icon"><i class="fas fa-building"></i></span> 🏢 Properties
             @if($__pendingP > 0)
                 <span class="nav-badge badge rounded-pill bg-warning text-dark" style="font-size:.6rem;">{{ $__pendingP }}</span>
+            @endif
+        </a>
+        <a href="{{ route('admin.inspections') }}" class="nav-link {{ request()->routeIs('admin.inspections') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-search"></i></span> 🔍 Inspections
+            @if($__pendingI > 0)
+                <span class="nav-badge badge rounded-pill bg-info" style="font-size:.6rem;">{{ $__pendingI }}</span>
+            @endif
+        </a>
+
+        <div class="sidebar-section mt-1">Rentals</div>
+        <a href="{{ route('admin.rentals') }}"      class="nav-link {{ request()->routeIs('admin.rentals') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-file-contract"></i></span> 📑 Booking Requests
+            @if($__pendingR > 0)
+                <span class="nav-badge badge rounded-pill bg-success" style="font-size:.6rem;">{{ $__pendingR }}</span>
+            @endif
+        </a>
+        <a href="{{ route('admin.rentals', ['lease_queue' => 1]) }}" class="nav-link {{ request()->routeIs('admin.rentals') && request()->boolean('lease_queue') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-file-signature"></i></span> 📄 Agreements
+            @if($__pendingA > 0)
+                <span class="nav-badge badge rounded-pill bg-danger" style="font-size:.6rem;">{{ $__pendingA }}</span>
+            @endif
+        </a>
+        <a href="#" class="nav-link">
+            <span class="nav-icon"><i class="fas fa-door-open"></i></span> 🚪 Move-Out
+            @if($__pendingMO > 0)
+                <span class="nav-badge badge rounded-pill bg-warning text-dark" style="font-size:.6rem;">{{ $__pendingMO }}</span>
             @endif
         </a>
 
         <div class="sidebar-section mt-1">Finance</div>
         <a href="{{ route('admin.transactions') }}" class="nav-link {{ request()->routeIs('admin.transactions') ? 'active' : '' }}">
-            <span class="nav-icon"><i class="fas fa-money-bill-transfer"></i></span> Transactions
-        </a>
-        <a href="{{ route('admin.rentals') }}"      class="nav-link {{ request()->routeIs('admin.rentals') ? 'active' : '' }}">
-            <span class="nav-icon"><i class="fas fa-file-contract"></i></span> Rental Activity
-            @if($__pendingR > 0)
-                <span class="nav-badge badge rounded-pill bg-info text-dark" style="font-size:.6rem;">{{ $__pendingR }}</span>
+            <span class="nav-icon"><i class="fas fa-money-bill-wave"></i></span> 💰 Payments
+            @if($__pendingPay > 0)
+                <span class="nav-badge badge rounded-pill bg-primary" style="font-size:.6rem;">{{ $__pendingPay }}</span>
             @endif
+        </a>
+        <a href="{{ route('admin.settlements.index') }}" class="nav-link {{ request()->routeIs('admin.settlements.*') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-calculator"></i></span> 💵 Settlements
+        </a>
+
+        <div class="sidebar-section mt-1">Support</div>
+        <a href="{{ route('admin.maintenance') }}" class="nav-link {{ request()->routeIs('admin.maintenance') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-exclamation-triangle"></i></span> ⚠ Complaints
+            @if($__pendingC > 0)
+                <span class="nav-badge badge rounded-pill bg-danger" style="font-size:.6rem;">{{ $__pendingC }}</span>
+            @endif
+        </a>
+        <a href="{{ route('admin.reports') }}" class="nav-link {{ request()->routeIs('admin.reports') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-chart-bar"></i></span> 📊 Reports
         </a>
 
         <div class="sidebar-section mt-1">System</div>
+        <a href="{{ route('profile.show') }}" class="nav-link {{ request()->routeIs('profile.show') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-id-card"></i></span> My Profile
+        </a>
+        <a href="{{ route('profile.edit') }}" class="nav-link {{ request()->routeIs('profile.edit') ? 'active' : '' }}">
+            <span class="nav-icon"><i class="fas fa-user-pen"></i></span> Edit Profile
+        </a>
         <a href="{{ route('admin.settings') }}" class="nav-link {{ request()->routeIs('admin.settings') ? 'active' : '' }}">
             <span class="nav-icon"><i class="fas fa-gear"></i></span> Settings
         </a>
         <a href="{{ route('home') }}" class="nav-link">
             <span class="nav-icon"><i class="fas fa-arrow-left-long"></i></span> Back to Website
         </a>
-        <form action="{{ route('logout') }}" method="POST" class="m-0">
-            @csrf
-            <button type="submit" class="nav-link w-100 border-0 bg-transparent text-start" style="cursor:pointer;">
-                <span class="nav-icon"><i class="fas fa-right-from-bracket"></i></span> Logout
-            </button>
-        </form>
 
     </div>
 
     <div class="sidebar-footer">
         <div class="d-flex align-items-center gap-2">
-            <div class="u-avatar" style="background:var(--accent);color:#fff;width:30px;height:30px;font-size:.72rem;">
-                {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
-            </div>
+            @if(Auth::user()->profile_image_url)
+                <img src="{{ Auth::user()->profile_image_url }}" alt="Admin avatar" class="u-avatar" style="width:30px;height:30px;font-size:.72rem;object-fit:cover;">
+            @else
+                <div class="u-avatar" style="background:var(--accent);color:#fff;width:30px;height:30px;font-size:.72rem;">
+                    {{ strtoupper(substr(Auth::user()->username ?: Auth::user()->name, 0, 1)) }}
+                </div>
+            @endif
             <div style="overflow:hidden;">
                 <div class="text-white text-truncate" style="font-size:.78rem;font-weight:600;max-width:170px;">{{ Auth::user()->name }}</div>
                 <div style="font-size:.62rem;color:rgba(255,255,255,.35);">Administrator</div>
             </div>
         </div>
+        <form action="{{ route('logout') }}" method="POST" class="m-0">
+            @csrf
+            <button type="submit" class="sidebar-logout-btn border-0" style="cursor:pointer;">
+                <i class="fas fa-right-from-bracket"></i> Logout
+            </button>
+        </form>
     </div>
 </nav>
 
@@ -305,7 +367,60 @@
                         </div>
                     </a>
                     @endforeach
+                    {{-- Pending Inspections --}}
+                    @foreach($__notifInspections as $ni)
+                    <a href="{{ route('admin.inspections') }}" class="notif-item">
+                        <div class="notif-icon" style="background:#faf5ff;"><i class="fas fa-search" style="color:#9333ea;"></i></div>
+                        <div>
+                            <div class="notif-text">Inspection requested for <strong>{{ Str::limit($ni->house->title ?? '—', 25) }}</strong></div>
+                            <div class="notif-time">Inspection pending · {{ \Carbon\Carbon::parse($ni->created_at)->diffForHumans() }}</div>
+                        </div>
+                    </a>
+                    @endforeach
 
+                    {{-- Pending Agreements --}}
+                    @foreach($__notifAgreements as $na)
+                    <a href="{{ route('admin.rentals', ['lease_queue' => 1]) }}" class="notif-item">
+                        <div class="notif-icon" style="background:#fef2f2;"><i class="fas fa-file-signature" style="color:#dc2626;"></i></div>
+                        <div>
+                            <div class="notif-text">Lease agreement pending for <strong>{{ $na->tenant->name ?? '—' }}</strong></div>
+                            <div class="notif-time">Agreement pending · {{ \Carbon\Carbon::parse($na->created_at)->diffForHumans() }}</div>
+                        </div>
+                    </a>
+                    @endforeach
+
+                    {{-- Pending Payments --}}
+                    @foreach($__notifPayments as $np)
+                    <a href="{{ route('admin.transactions') }}" class="notif-item">
+                        <div class="notif-icon" style="background:#f0fdf4;"><i class="fas fa-money-bill-wave" style="color:#16a34a;"></i></div>
+                        <div>
+                            <div class="notif-text">Payment verification needed for <strong>{{ $np->tenant->name ?? '—' }}</strong></div>
+                            <div class="notif-time">Payment pending · {{ \Carbon\Carbon::parse($np->created_at)->diffForHumans() }}</div>
+                        </div>
+                    </a>
+                    @endforeach
+
+                    {{-- Pending Complaints --}}
+                    @foreach($__notifComplaints as $nc)
+                    <a href="{{ route('admin.maintenance') }}" class="notif-item">
+                        <div class="notif-icon" style="background:#fef2f2;"><i class="fas fa-exclamation-triangle" style="color:#dc2626;"></i></div>
+                        <div>
+                            <div class="notif-text">Maintenance request from <strong>{{ $nc->rental->tenant->name ?? '—' }}</strong></div>
+                            <div class="notif-time">Complaint pending · {{ \Carbon\Carbon::parse($nc->created_at)->diffForHumans() }}</div>
+                        </div>
+                    </a>
+                    @endforeach
+
+                    {{-- Pending Move-Outs --}}
+                    @foreach($__notifMoveOuts as $nmo)
+                    <a href="#" class="notif-item">
+                        <div class="notif-icon" style="background:#fff7ed;"><i class="fas fa-door-open" style="color:#ea580c;"></i></div>
+                        <div>
+                            <div class="notif-text">Move-out request from <strong>{{ $nmo->rental->tenant->name ?? '—' }}</strong></div>
+                            <div class="notif-time">Move-out pending · {{ \Carbon\Carbon::parse($nmo->created_at)->diffForHumans() }}</div>
+                        </div>
+                    </a>
+                    @endforeach
                     <div class="notif-footer">
                         <a href="{{ route('admin.dashboard') }}" class="text-primary text-decoration-none" style="font-size:.78rem;font-weight:600;">
                             View Dashboard <i class="fas fa-arrow-right ms-1"></i>
@@ -315,9 +430,13 @@
             </div>
 
             <div class="d-flex align-items-center gap-2 ms-1">
-                <div class="u-avatar" style="background:var(--accent);color:#fff;font-size:.78rem;">
-                    {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
-                </div>
+                @if(Auth::user()->profile_image_url)
+                    <img src="{{ Auth::user()->profile_image_url }}" alt="Admin avatar" class="u-avatar" style="font-size:.78rem;object-fit:cover;">
+                @else
+                    <div class="u-avatar" style="background:var(--accent);color:#fff;font-size:.78rem;">
+                        {{ strtoupper(substr(Auth::user()->username ?: Auth::user()->name, 0, 1)) }}
+                    </div>
+                @endif
                 <div class="d-none d-sm-block">
                     <div style="font-size:.83rem;font-weight:600;color:#0f172a;line-height:1.2;">{{ Auth::user()->name }}</div>
                     <div style="font-size:.68rem;color:#94a3b8;">Administrator</div>

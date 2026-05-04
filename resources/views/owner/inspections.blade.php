@@ -306,12 +306,12 @@
                 <div class="label">Pending</div>
             </div>
             <div class="stat-box">
-                <div class="number">{{ $approvedCount }}</div>
-                <div class="label">Approved</div>
+                <div class="number">{{ $confirmedCount }}</div>
+                <div class="label">Confirmed</div>
             </div>
             <div class="stat-box">
-                <div class="number">{{ $completedCount }}</div>
-                <div class="label">Completed</div>
+                <div class="number">{{ $rescheduledCount }}</div>
+                <div class="label">Rescheduled</div>
             </div>
         </div>
     </div>
@@ -367,12 +367,12 @@
                 <div class="inspection-actions">
                     @if ($inspection->status === 'pending')
                         <button class="btn-action btn-approve" onclick='openApproveModal({{ $inspection->id }}, @json($inspection->house->title ?? "Property"))'>
-                            ✓ Approve
+                            ✓ Confirm
                         </button>
                         <button class="btn-action btn-reject" onclick="openRejectModal({{ $inspection->id }})">
                             ✕ Reject
                         </button>
-                    @elseif ($inspection->status === 'approved')
+                    @elseif ($inspection->status === 'confirmed')
                         <button class="btn-action btn-complete" onclick="completeInspection({{ $inspection->id }})">
                             ✓ Mark Complete
                         </button>
@@ -506,9 +506,9 @@ window.onclick = function(event) {
             @php
                 $iColor = match($insp->status) {
                     'pending'   => ['bg'=>'#fff7ed','color'=>'#d97706','icon'=>'fa-hourglass-half'],
-                    'approved'  => ['bg'=>'#f0fdf4','color'=>'#059669','icon'=>'fa-check-circle'],
+                    'confirmed' => ['bg'=>'#f0fdf4','color'=>'#059669','icon'=>'fa-check-circle'],
+                    'rescheduled' => ['bg'=>'#eff6ff','color'=>'#2563eb','icon'=>'fa-calendar-days'],
                     'rejected'  => ['bg'=>'#fef2f2','color'=>'#dc2626','icon'=>'fa-times-circle'],
-                    'completed' => ['bg'=>'#eff6ff','color'=>'#2563eb','icon'=>'fa-flag-checkered'],
                     default     => ['bg'=>'#f1f5f9','color'=>'#64748b','icon'=>'fa-circle'],
                 };
             @endphp
@@ -565,7 +565,7 @@ window.onclick = function(event) {
                                         <input type="text" name="owner_notes" class="form-control form-control-sm" placeholder="e.g. I'll meet you at the gate." maxlength="500">
                                     </div>
                                     <button type="submit" class="btn btn-sm btn-success">
-                                        <i class="fas fa-check me-1"></i>Approve
+                                        <i class="fas fa-check me-1"></i>Confirm
                                     </button>
                                 </form>
                                 <form action="{{ route('owner.inspections.reject', $insp) }}" method="POST" class="d-flex gap-2 mt-2">
@@ -578,8 +578,8 @@ window.onclick = function(event) {
                                 </form>
                             @endif
 
-                            {{-- Mark completed for approved --}}
-                            @if($insp->status === 'approved')
+                            {{-- Mark completed for confirmed --}}
+                            @if($insp->status === 'confirmed')
                                 <form action="{{ route('owner.inspections.complete', $insp) }}" method="POST" class="mt-2">
                                     @csrf
                                     <button type="submit" class="btn btn-sm btn-outline-primary">

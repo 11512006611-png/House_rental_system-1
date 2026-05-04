@@ -19,6 +19,9 @@ class Rental extends Model
         'lease_status',
         'lease_requested_at',
         'lease_reviewed_at',
+        'stay_decision',
+        'stay_decision_message',
+        'stay_decision_at',
         'notes',
     ];
 
@@ -28,6 +31,7 @@ class Rental extends Model
         'monthly_rent' => 'decimal:2',
         'lease_requested_at' => 'datetime',
         'lease_reviewed_at' => 'datetime',
+        'stay_decision_at' => 'datetime',
     ];
 
     public function requestStatusLabel(): string
@@ -70,6 +74,11 @@ class Rental extends Model
     public function leaseAgreement()
     {
         return $this->hasOne(LeaseAgreement::class);
+    }
+
+    public function booking()
+    {
+        return $this->hasOne(Booking::class);
     }
 
     public function moveOutRequests()

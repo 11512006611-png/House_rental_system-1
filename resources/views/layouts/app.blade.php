@@ -79,6 +79,11 @@
                                 <i class="fas fa-gauge me-1"></i> Tenant Dashboard
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ request()->routeIs('tenant.maintenance.*') ? 'active' : '' }}" href="{{ route('tenant.maintenance.index') }}">
+                                <i class="fas fa-screwdriver-wrench me-1"></i> Maintenance
+                            </a>
+                        </li>
                         @endif
                         @if(Auth::user()->isOwner() || Auth::user()->isAdmin())
                         <li class="nav-item">
@@ -103,17 +108,32 @@
                             </a>
                         </li>
                     @else
+                        @php $currentUser = Auth::user(); @endphp
                         <li class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle d-flex align-items-center gap-2" href="#" data-bs-toggle="dropdown">
-                                <div class="user-avatar-sm">{{ strtoupper(substr(Auth::user()->name, 0, 1)) }}</div>
-                                <span class="d-none d-lg-inline">{{ Auth::user()->name }}</span>
+                                @if($currentUser->profile_image_url)
+                                    <img src="{{ $currentUser->profile_image_url }}" alt="User avatar" class="user-avatar-sm" style="object-fit:cover;">
+                                @else
+                                    <div class="user-avatar-sm">{{ strtoupper(substr($currentUser->username ?: $currentUser->name, 0, 1)) }}</div>
+                                @endif
+                                <span class="d-none d-lg-inline">{{ $currentUser->name }}</span>
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0">
                                 <li class="dropdown-header small text-muted">
                                     <i class="fas fa-user me-1"></i>
-                                    {{ ucfirst(Auth::user()->role) }}
+                                    {{ ucfirst($currentUser->role) }}
                                 </li>
                                 <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('profile.show') }}">
+                                        <i class="fas fa-id-card me-2 text-primary"></i> My Profile
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('profile.edit') }}">
+                                        <i class="fas fa-pen me-2 text-primary"></i> Edit Profile
+                                    </a>
+                                </li>
                                 @if(Auth::user()->isOwner() || Auth::user()->isAdmin())
                                 <li>
                                     <a class="dropdown-item" href="{{ route('houses.my-listings') }}">
@@ -125,6 +145,11 @@
                                 <li>
                                     <a class="dropdown-item" href="{{ route('rentals.my-rentals') }}">
                                         <i class="fas fa-file-contract me-2 text-primary"></i> My Rentals
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ route('tenant.maintenance.index') }}">
+                                        <i class="fas fa-screwdriver-wrench me-2 text-primary"></i> Maintenance Requests
                                     </a>
                                 </li>
                                 @endif
@@ -245,18 +270,14 @@
 
             <hr class="border-secondary">
             <div class="row py-3">
-                <div class="col-md-6 text-center text-md-start">
+                <div class="col-12 text-center text-md-start">
                     <small class="text-muted">&copy; {{ date('Y') }} House Rental System Bhutan. All rights reserved.</small>
-                </div>
-                <div class="col-md-6 text-center text-md-end">
-                    <small class="text-muted">
-                        Built with <i class="fas fa-heart text-danger"></i> for the Kingdom of Bhutan
-                        <img src="https://flagcdn.com/16x12/bt.png" alt="Bhutan Flag" class="ms-1" style="vertical-align: middle;">
-                    </small>
                 </div>
             </div>
         </div>
     </footer>
+
+
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

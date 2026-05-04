@@ -279,26 +279,48 @@
     font-weight: 600;
 }
 
-#rentModal .modal-content {
+#inspectionModal .modal-content {
     border: none;
     border-radius: 18px;
     overflow: hidden;
+    max-height: 92vh;
 }
 
-#rentModal .modal-header {
+#inspectionModal .modal-header {
     background: linear-gradient(135deg, #0f4c81, #0b6fb4);
     color: #fff;
 }
 
-#rentModal .modal-body {
+#inspectionModal .modal-body {
     background: #f8fbff;
     color: var(--house-ink);
+    overflow-y: auto;
 }
 
-#rentModal .form-label,
-#rentModal .small,
-#rentModal .text-muted {
+#inspectionModal .form-label,
+#inspectionModal .small,
+#inspectionModal .text-muted {
     color: #334155 !important;
+}
+
+#inspectionModal .modal-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+}
+
+.rent-send-quick {
+    background: #0b6fb4;
+    border-color: #0b6fb4;
+    color: #fff;
+    font-weight: 700;
+}
+
+.rent-send-quick:hover,
+.rent-send-quick:focus {
+    background: #09598f;
+    border-color: #09598f;
+    color: #fff;
 }
 
 .rent-summary {
@@ -439,11 +461,36 @@
                     <div class="price-type-badge">{{ $house->type }}</div>
                     <hr>
 
-                    @if($house->status === 'available')
+                    @if(Auth::check() && Auth::user()->isTenant() && !empty($tenantRental))
+                        @if($advancePaymentEligible)
+                            <button type="button" class="btn btn-hrs-primary w-100 btn-lg mb-3" data-bs-toggle="modal" data-bs-target="#advancePaymentModal">
+                                <i class="fas fa-credit-card me-2"></i> Pay Advance Payment
+                            </button>
+                        @elseif(isset($advancePaymentStatus) && $advancePaymentStatus === 'pending')
+                            <div class="alert alert-warning text-center mb-3" style="border-radius:16px;">
+                                <i class="fas fa-clock me-1"></i> Payment Verification Pending
+                            </div>
+                        @elseif(isset($advancePaymentStatus) && $advancePaymentStatus === 'verified')
+                            <div class="alert alert-success text-center mb-3" style="border-radius:16px;">
+                                <i class="fas fa-check me-1"></i> Payment Verified
+                            </div>
+                        @elseif(isset($advancePaymentStatus) && $advancePaymentStatus === 'rejected')
+                            <div class="alert alert-danger text-center mb-3" style="border-radius:16px;">
+                                <i class="fas fa-times me-1"></i> Payment Rejected - Try Again
+                            </div>
+                            <button type="button" class="btn btn-hrs-primary w-100 btn-lg mb-3" data-bs-toggle="modal" data-bs-target="#advancePaymentModal">
+                                <i class="fas fa-credit-card me-2"></i> Resubmit Payment
+                            </button>
+                        @else
+                            <div class="alert alert-info text-center mb-3" style="border-radius:16px;font-size:0.9rem;">
+                                <i class="fas fa-info-circle me-1"></i> Complete inspection and accept lease to pay.
+                            </div>
+                        @endif
+                    @elseif($house->status === 'available')
                         @auth
                             @if(Auth::user()->isTenant())
-                                <button type="button" class="btn btn-hrs-primary w-100 btn-lg mb-3" data-bs-toggle="modal" data-bs-target="#rentModal">
-                                    <i class="fas fa-file-contract me-2"></i> Send Rental Request
+                                <button type="button" class="btn btn-hrs-primary w-100 btn-lg mb-3" data-bs-toggle="modal" data-bs-target="#inspectionModal">
+                                    <i class="fas fa-search me-2"></i> Request Inspection
                                 </button>
                             @elseif(Auth::user()->id === $house->owner_id)
                                 <a href="{{ route('houses.edit', $house) }}" class="btn btn-outline-primary w-100 mb-2">
@@ -458,8 +505,8 @@
                                 </form>
                             @endif
                         @else
-                            <a href="{{ route('login') }}" class="btn btn-hrs-primary w-100 btn-lg mb-3">
-                                <i class="fas fa-sign-in-alt me-2"></i> Login to Request
+                            <a href="{{ route('login', ['role' => 'tenant', 'intended_house_id' => $house->id]) }}" class="btn btn-hrs-primary w-100 btn-lg mb-3">
+                                <i class="fas fa-sign-in-alt me-2"></i> Login to Request Inspection
                             </a>
                         @endauth
                     @else
@@ -550,19 +597,33 @@
 
 @auth
 @if(Auth::user()->isTenant())
-<div class="modal fade" id="rentModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+<div class="modal fade" id="inspectionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content shadow-lg">
             <div class="modal-header border-0">
                 <div>
-                    <h5 class="modal-title fw-bold mb-1"><i class="fas fa-file-contract me-2"></i>Send Rental Request</h5>
-                    <p class="mb-0 small" style="opacity:.9;">Start the process to rent this property</p>
+                    <h5 class="modal-title fw-bold mb-1"><i class="fas fa-search me-2"></i>Request Inspection</h5>
+                    <p class="mb-0 small" style="opacity:.9;">Send your preferred time directly to admin for review</p>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form action="{{ route('rentals.store', $house) }}" method="POST" id="rentalRequestForm">
+            <form action="{{ route('inspections.store') }}" method="POST" id="inspectionRequestForm">
                 @csrf
+                <input type="hidden" name="house_id" value="{{ $house->id }}">
+                <input type="hidden" id="inspectionHasErrors" value="{{ $errors->hasAny(['house_id', 'preferred_date', 'preferred_time', 'message']) ? '1' : '0' }}">
                 <div class="modal-body p-4">
+                    @if($errors->hasAny(['house_id', 'preferred_date', 'preferred_time', 'message']))
+                    <div class="alert alert-danger">
+                        <strong>Please fix these fields:</strong>
+                        <ul class="mb-0 mt-1 ps-3">
+                            @error('house_id')<li>{{ $message }}</li>@enderror
+                            @error('preferred_date')<li>{{ $message }}</li>@enderror
+                            @error('preferred_time')<li>{{ $message }}</li>@enderror
+                            @error('message')<li>{{ $message }}</li>@enderror
+                        </ul>
+                    </div>
+                    @endif
+
                     <div class="rent-summary mb-3">
                         <div class="row g-3 mb-0">
                             <div class="col-6">
@@ -580,36 +641,154 @@
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Preferred Move-in Date <span class="text-danger">*</span></label>
-                        <input type="date" name="rental_date" id="rentalDate" class="form-control" min="{{ date('Y-m-d') }}" required>
-                        <small class="d-block mt-1">The date you want to move in</small>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Preferred Date</label>
+                            <input type="date" name="preferred_date" value="{{ old('preferred_date') }}" class="form-control @error('preferred_date') is-invalid @enderror" min="{{ now()->toDateString() }}" required>
+                            @error('preferred_date')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Preferred Time</label>
+                            <select name="preferred_time" class="form-select @error('preferred_time') is-invalid @enderror" required>
+                                <option value="">Select time</option>
+                                <option value="09:00" @selected(old('preferred_time') === '09:00')>9:00 AM</option>
+                                <option value="11:00" @selected(old('preferred_time') === '11:00')>11:00 AM</option>
+                                <option value="14:00" @selected(old('preferred_time') === '14:00')>2:00 PM</option>
+                                <option value="16:00" @selected(old('preferred_time') === '16:00')>4:00 PM</option>
+                                <option value="18:00" @selected(old('preferred_time') === '18:00')>6:00 PM</option>
+                            </select>
+                            @error('preferred_time')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Additional Notes <span class="text-muted" style="font-weight:400;">(Optional)</span></label>
-                        <textarea name="notes" id="rentalNotes" class="form-control" rows="4" maxlength="500" placeholder="Any special requirements or questions for the owner..."></textarea>
-                        <small class="d-block mt-1"><span id="charCount">0</span>/500 characters</small>
+                    <div class="mb-2">
+                        <label class="form-label fw-semibold">Message to Admin <span class="text-muted" style="font-weight:400;">(Optional)</span></label>
+                        <textarea name="message" id="inspectionMessage" class="form-control @error('message') is-invalid @enderror" rows="3" maxlength="1000" placeholder="Any schedule details or instructions for admin...">{{ old('message') }}</textarea>
+                        @error('message')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        <small class="d-block mt-1"><span id="charCount">0</span>/1000 characters</small>
                     </div>
 
                     <div class="alert d-flex gap-2 mt-3" style="border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;">
                         <i class="fas fa-info-circle mt-1 flex-shrink-0"></i>
                         <div class="small mb-0">
                             <strong>What happens next?</strong><br>
-                            The owner will review your request and either accept or reject it. You will be notified once they respond.
+                            Admin will receive this inspection request immediately and review your preferred schedule.
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer border-0" style="background:#f1f6ff;">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-paper-plane me-1"></i> Send Request
+                    <button type="submit" class="btn rent-send-quick" id="inspectionSubmitBtn">
+                        <i class="fas fa-paper-plane me-1"></i> Send Inspection Request
                     </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+@endif
+
+@if(Auth::user()->isTenant() && !empty($tenantRental) && $advancePaymentEligible)
+    @php
+        $securityDeposit = $house->security_deposit_amount ?? $house->price;
+        $commissionRate = $house->admin_commission_rate ?? 5;
+        $serviceFee = round($house->price * ($commissionRate / 100), 2);
+        // Charge for two months (rent + service fee for each month)
+        $firstMonthTotal = round(($house->price * 2) + ($serviceFee * 2), 2);
+        $totalAdvance = round($firstMonthTotal + $securityDeposit, 2);
+    @endphp
+    <div class="modal fade" id="advancePaymentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content shadow-lg">
+                <div class="modal-header border-0">
+                    <div>
+                        <h5 class="modal-title fw-bold mb-1"><i class="fas fa-credit-card me-2"></i>Advance Payment</h5>
+                        <p class="mb-0 small" style="opacity:.9;">Pay your first month rent plus security deposit after accepting the lease agreement.</p>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form action="{{ route('rentals.pay', $tenantRental) }}" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <input type="hidden" name="confirm_payment" value="1">
+                    <div class="modal-body p-4">
+                        <div class="alert alert-info d-flex gap-2 mb-4" style="border-radius:12px;">
+                            <i class="fas fa-info-circle mt-1 flex-shrink-0"></i>
+                            <div class="small mb-0">
+                                Please upload your payment proof and submit. Admin will verify both the first month rent and security deposit.
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
+                                <select name="payment_method" id="paymentMethodHouse" class="form-select" required>
+                                    <option value="">Select payment method</option>
+                                    <option value="mbob">mBoB</option>
+                                    <option value="mpay">mPay</option>
+                                    <option value="bdbl">BDBL</option>
+                                    <option value="cash">Cash</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Transaction ID <span class="text-muted">(Optional)</span></label>
+                                <input type="text" name="transaction_id" class="form-control" maxlength="120" placeholder="Transaction reference number">
+                            </div>
+                        </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Payment Proof <span class="text-danger">*</span></label>
+                                <input type="file" name="payment_proof" id="paymentProofHouse" class="form-control" accept=".jpg,.jpeg,.png,.pdf" required>
+                                <small class="text-muted d-block mt-1">Accepted: JPG, PNG, PDF. Max 5MB.</small>
+                            </div>
+
+                            <div class="mb-3">
+                                <button type="button" id="confirmInlineBtnHouse" class="btn btn-lg w-100" disabled
+                                        style="background:linear-gradient(135deg,#059669,#047857);color:white;border-radius:12px;font-weight:800;padding:0.9rem 1rem;font-size:1rem;box-shadow:0 4px 6px rgba(0,0,0,0.08);border:2px solid #10b981;">
+                                    <i class="fas fa-check-circle me-2"></i>✓ Confirm Payment
+                                </button>
+                                <small class="text-success d-block text-center fw-semibold mt-2" style="font-size:0.95rem;">Select a payment method and upload screenshot, then click Confirm Payment</small>
+                            </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Additional Notes <span class="text-muted">(Optional)</span></label>
+                            <textarea name="notes" rows="3" class="form-control" maxlength="500" placeholder="Payment details or bank reference..."></textarea>
+                        </div>
+
+                        <div class="p-3 rounded-3" style="background:#ecfeff;border:1px solid #bae6fd;">
+                            <div class="small text-uppercase fw-semibold mb-2" style="color:#0369a1;">Payment Breakdown</div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>First month rent</span>
+                                <span>Nu. {{ number_format($house->price, 0) }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1 small text-muted">
+                                <span>Service fee ({{ $commissionRate }}%)</span>
+                                <span>Nu. {{ number_format($serviceFee, 0) }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 border-bottom pb-2">
+                                <span><strong>Two months total</strong></span>
+                                <span><strong>Nu. {{ number_format($firstMonthTotal, 0) }}</strong></span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Security deposit</span>
+                                <span>Nu. {{ number_format($securityDeposit, 0) }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between pt-2 border-top">
+                                <span><strong>Total advance</strong></span>
+                                <span><strong>Nu. {{ number_format($totalAdvance, 0) }}</strong></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 d-flex flex-column align-items-stretch" style="background:#f1f6ff;padding:1.25rem 1.5rem 1.75rem;min-height:110px;">
+                        <small class="text-muted mb-3">Please review your payment details. Admin will verify your proof after submission.</small>
+                        <div class="d-flex justify-content-end gap-2">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-hrs-primary">Submit Payment</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 @endif
 @endauth
 
@@ -627,10 +806,36 @@ function setMainHouseImage(imageUrl, button) {
     }
 }
 
-document.getElementById('rentalNotes')?.addEventListener('input', function() {
+document.getElementById('inspectionMessage')?.addEventListener('input', function() {
     const charCount = document.getElementById('charCount');
     if (charCount) {
         charCount.textContent = this.value.length;
+    }
+});
+
+window.addEventListener('DOMContentLoaded', function() {
+    const inspectionForm = document.getElementById('inspectionRequestForm');
+    const submitBtn = document.getElementById('inspectionSubmitBtn');
+    const textArea = document.getElementById('inspectionMessage');
+    const charCount = document.getElementById('charCount');
+    const hasInspectionErrors = document.getElementById('inspectionHasErrors')?.value === '1';
+
+    if (textArea && charCount) {
+        charCount.textContent = textArea.value.length;
+    }
+
+    if (hasInspectionErrors) {
+        const modalEl = document.getElementById('inspectionModal');
+        if (modalEl && window.bootstrap?.Modal) {
+            window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+    }
+
+    if (inspectionForm && submitBtn) {
+        inspectionForm.addEventListener('submit', function() {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sending...';
+        });
     }
 });
 
@@ -638,6 +843,35 @@ function copyLink() {
     navigator.clipboard.writeText(window.location.href)
         .then(() => alert('Link copied!'));
 }
+
+// Inline Confirm Payment button for advance payment modal
+window.addEventListener('DOMContentLoaded', function() {
+    const advModal = document.getElementById('advancePaymentModal');
+    if (!advModal) return;
+    const form = advModal.querySelector('form');
+    const method = document.getElementById('paymentMethodHouse');
+    const proof = document.getElementById('paymentProofHouse');
+    const inlineBtn = document.getElementById('confirmInlineBtnHouse');
+
+    function validateInline() {
+        if (!inlineBtn) return;
+        const ok = method && method.value !== '' && proof && proof.files && proof.files.length > 0;
+        inlineBtn.disabled = !ok;
+        inlineBtn.style.opacity = ok ? '1' : '0.6';
+        inlineBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+    }
+
+    method?.addEventListener('change', validateInline);
+    proof?.addEventListener('change', validateInline);
+
+    inlineBtn?.addEventListener('click', function() {
+        if (inlineBtn.disabled) return;
+        inlineBtn.disabled = true;
+        inlineBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Submitting...';
+        // submit the modal form
+        if (form) form.submit();
+    });
+});
 </script>
 @endpush
 @endsection

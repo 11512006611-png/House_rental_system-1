@@ -11,6 +11,14 @@
     <div class="page-header">
         <h1><i class="fas fa-users me-2 text-warning"></i>Tenants</h1>
         <p>All registered tenants and their rental activity.</p>
+        <div class="d-flex align-items-center flex-wrap gap-2 mt-2">
+            <span class="chip chip-blue">Newest first</span>
+            @if(!empty($latestTenant))
+                <span class="chip chip-green">
+                    Latest: {{ $latestTenant->name }} ({{ \Carbon\Carbon::parse($latestTenant->created_at)->format('d M Y') }})
+                </span>
+            @endif
+        </div>
     </div>
 
     <div class="admin-card">
@@ -36,10 +44,19 @@
                         <td class="text-muted small">{{ $i + 1 }}</td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
-                                <div class="u-avatar" style="background:#fff7ed;color:#ea580c;">
-                                    {{ strtoupper(substr($t->name, 0, 1)) }}
+                                @if($t->profile_image_url)
+                                    <img src="{{ $t->profile_image_url }}" alt="{{ $t->name }}" class="u-avatar" style="object-fit:cover;">
+                                @else
+                                    <div class="u-avatar" style="background:#fff7ed;color:#ea580c;">
+                                        {{ strtoupper(substr($t->name, 0, 1)) }}
+                                    </div>
+                                @endif
+                                <div>
+                                    <div class="fw-semibold">{{ $t->name }}</div>
+                                    @if($t->username)
+                                        <div class="text-muted" style="font-size:.72rem;">{{ '@' . $t->username }}</div>
+                                    @endif
                                 </div>
-                                <span class="fw-semibold">{{ $t->name }}</span>
                             </div>
                         </td>
                         <td>
@@ -76,6 +93,13 @@
                             @endif
                         </td>
                         <td class="text-center">
+                            <div class="d-flex gap-1 justify-content-center flex-wrap">
+                            <a href="{{ route('admin.users.show', $t->id) }}"
+                               class="btn btn-xs btn-outline-primary"
+                               style="font-size:.72rem;padding:.2rem .5rem;"
+                               title="View profile">
+                                <i class="fas fa-eye me-1"></i>Profile
+                            </a>
                             @if($t->status === 'suspended')
                             <form action="{{ route('admin.users.activate', $t->id) }}" method="POST" class="m-0">
                                 @csrf
@@ -97,6 +121,16 @@
                             @else
                             <span class="text-muted small">—</span>
                             @endif
+                            <form action="{{ route('admin.users.delete', $t->id) }}" method="POST" class="m-0">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="btn btn-xs btn-outline-danger"
+                                    style="font-size:.72rem;padding:.2rem .5rem;"
+                                    onclick="return confirm('Delete tenant {{ addslashes($t->name) }}? This action cannot be undone.')">
+                                    <i class="fas fa-trash-alt me-1"></i>Delete
+                                </button>
+                            </form>
+                            </div>
                         </td>
                     </tr>
                     @endforeach

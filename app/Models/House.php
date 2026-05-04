@@ -12,10 +12,12 @@ class House extends Model
     protected $fillable = [
         'owner_id',
         'location_id',
+        'inspected_by_admin_id',
         'title',
         'location',
         'type',
         'price',
+        'security_deposit_amount',
         'description',
         'image',
         'bedrooms',
@@ -23,12 +25,22 @@ class House extends Model
         'area',
         'address',
         'status',
+        'admin_commission_rate',
+        'inspection_scheduled_at',
+        'inspection_schedule_acknowledged_at',
+        'inspected_at',
+        'admin_inspection_notes',
         'is_featured',
     ];
 
     protected $casts = [
         'price' => 'decimal:2',
+        'security_deposit_amount' => 'decimal:2',
+        'admin_commission_rate' => 'decimal:2',
         'is_featured' => 'boolean',
+        'inspection_scheduled_at' => 'datetime',
+        'inspection_schedule_acknowledged_at' => 'datetime',
+        'inspected_at' => 'datetime',
     ];
 
     public function owner()
@@ -41,9 +53,24 @@ class House extends Model
         return $this->belongsTo(Location::class, 'location_id');
     }
 
+    public function inspectedByAdmin()
+    {
+        return $this->belongsTo(User::class, 'inspected_by_admin_id');
+    }
+
     public function rentals()
     {
         return $this->hasMany(Rental::class);
+    }
+
+    public function bookings()
+    {
+        return $this->hasMany(Booking::class);
+    }
+
+    public function inspectionRequests()
+    {
+        return $this->hasMany(Inspection::class);
     }
 
     public function houseImages()

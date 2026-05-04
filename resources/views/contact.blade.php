@@ -42,7 +42,7 @@
                     </div>
                     <h5 class="feature-title mt-3">Phone</h5>
                     <p class="feature-text mb-0">
-                        <a href="tel:+97521234567" class="text-decoration-none text-muted">+975 2 123456</a><br>
+                        <a href="tel:+97521234567" class="text-decoration-none text-muted">+975  123456</a><br>
                         <a href="tel:+97517654321" class="text-decoration-none text-muted">+975 17 654321</a>
                     </p>
                 </div>

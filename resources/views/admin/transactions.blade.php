@@ -62,6 +62,15 @@
                 </select>
             </div>
             <div class="col-md-2">
+                <select name="type" class="form-select form-select-sm">
+                    <option value="">All Types</option>
+                    <option value="first_month_rent" @selected(request('type')==='first_month_rent')>First Month Rent</option>
+                    <option value="security_deposit" @selected(request('type')==='security_deposit')>Security Deposit</option>
+                    <option value="monthly_rent" @selected(request('type')==='monthly_rent')>Monthly Rent</option>
+                    <option value="refund" @selected(request('type')==='refund')>Refund</option>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <input type="month" name="month" class="form-control form-control-sm"
                     value="{{ request('month') }}" title="Filter by month">
             </div>
@@ -94,12 +103,15 @@
                     <th>Tenant</th>
                     <th>Property</th>
                     <th>Owner</th>
+                    <th class="text-center">Type</th>
                     <th class="text-end">Amount</th>
                     <th class="text-center">Method</th>
                     <th class="text-center">Rate</th>
                     <th class="text-end">Commission</th>
                     <th class="text-end">Owner Share</th>
+                    <th class="text-center">Held</th>
                     <th class="text-center">Proof</th>
+                    <th class="text-center">Month</th>
                     <th class="text-center">Date</th>
                     <th class="text-center">Status</th>
                     <th class="text-center">Verification</th>
@@ -126,6 +138,18 @@
                             <span style="font-size:.84rem;">{{ $owner->name ?? '—' }}</span>
                         </div>
                     </td>
+                    <td class="text-center">
+                        @php
+                            $typeLabel = match($p->payment_type) {
+                                'first_month_rent' => 'Advance Rent',
+                                'security_deposit' => 'Deposit',
+                                'refund' => 'Refund',
+                                'monthly_rent' => 'Monthly Rent',
+                                default => ucfirst(str_replace('_', ' ', (string) $p->payment_type)),
+                            };
+                        @endphp
+                        <span class="chip chip-blue">{{ $typeLabel }}</span>
+                    </td>
                     <td class="text-end fw-600" style="font-size:.85rem;">Nu. {{ number_format($p->amount, 0) }}</td>
                     <td class="text-center">
                         @php
@@ -148,6 +172,13 @@
                     <td class="text-end fw-600" style="color:#2563eb;font-size:.85rem;">
                         Nu. {{ number_format($p->owner_share_amount ?? 0, 0) }}
                     </td>
+                    <td class="text-center">
+                        @if($p->held_by_admin)
+                            <span class="chip chip-yellow">Yes</span>
+                        @else
+                            <span class="chip chip-gray">No</span>
+                        @endif
+                    </td>
                     <td class="text-center small">
                         @if($p->payment_proof_path)
                             <a href="{{ asset('storage/' . $p->payment_proof_path) }}" target="_blank" class="btn btn-sm btn-light">File</a>
@@ -156,6 +187,9 @@
                         @else
                             —
                         @endif
+                    </td>
+                    <td class="text-center text-muted small">
+                        {{ $p->billingMonthLabel() }}
                     </td>
                     <td class="text-center text-muted small">
                         {{ $p->payment_date ? $p->payment_date->format('d M Y') : '—' }}
@@ -170,7 +204,14 @@
                         @if($p->verification_status === 'verified')
                             <span class="chip chip-green">Verified</span>
                         @elseif($p->verification_status === 'rejected')
-                            <span class="chip chip-red">Rejected</span>
+                            <div class="d-flex flex-column gap-2 align-items-center">
+                                <span class="chip chip-red">Rejected</span>
+                                <form method="POST" action="{{ route('admin.transactions.delete', $p) }}" onsubmit="return confirm('Are you sure you want to delete this rejected payment record?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">Delete</button>
+                                </form>
+                            </div>
                         @else
                             <div class="d-flex gap-1 justify-content-center flex-wrap">
                                 <form method="POST" action="{{ route('admin.transactions.verify', $p) }}">
@@ -182,17 +223,23 @@
                                     <input type="hidden" name="rejection_note" value="Payment proof could not be verified.">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Reject</button>
                                 </form>
+                                <form method="POST" action="{{ route('admin.transactions.delete', $p) }}" onsubmit="return confirm('Delete this payment record? This cannot be undone.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">Delete</button>
+                                </form>
                             </div>
                         @endif
                     </td>
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="13" class="text-center text-muted py-5">
+                    <td colspan="16" class="text-center text-muted py-5">
                         <i class="fas fa-receipt fa-2x mb-2 d-block opacity-25"></i>
                         No transactions found.
                     </td>
                 </tr>
+                               'dkbnb' => 'DK BNB',
                 @endforelse
             </tbody>
         </table>

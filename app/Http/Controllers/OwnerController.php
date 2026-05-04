@@ -12,8 +12,12 @@ use App\Notifications\WorkflowStatusNotification;
 use App\Services\LeaseAgreementService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Log;
 
 class OwnerController extends Controller
 {
@@ -31,96 +35,32 @@ class OwnerController extends Controller
         $owner   = Auth::user();
         $houseIds = $this->houseIds();
 
-        // Stat cards
-        $totalProperties     = House::where('owner_id', Auth::id())->count();
-        $availableProperties = House::where('owner_id', Auth::id())->where('status', 'available')->count();
-        $rentedProperties    = House::where('owner_id', Auth::id())->where('status', 'rented')->count();
-        $pendingProperties   = House::where('owner_id', Auth::id())->where('status', 'pending')->count();
-
-        $totalActiveTenants  = Rental::whereIn('house_id', $houseIds)
-            ->where('status', 'active')
-            ->distinct('tenant_id')
-            ->count('tenant_id');
-
-        $totalRevenue = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))
-            ->where('status', 'paid')
-            ->sum('amount');
-
-        $pendingAmount = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))
-            ->where('status', 'pending')
-            ->sum('amount');
-
-        $overdueAmount = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))
-            ->where('status', 'overdue')
-            ->sum('amount');
-
-        // 6-month revenue chart data
-        $chartData = collect();
-        for ($i = 5; $i >= 0; $i--) {
-            $month   = now()->subMonths($i);
-            $revenue = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))
-                ->where('status', 'paid')
-                ->whereYear('payment_date', $month->year)
-                ->whereMonth('payment_date', $month->month)
-                ->sum('amount');
-            $chartData->push(['label' => $month->format('M Y'), 'revenue' => (float) $revenue]);
-        }
-
-        // Recent payments
-        $recentPayments = Payment::with(['tenant', 'rental.house'])
-            ->whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))
-            ->latest('payment_date')
-            ->take(6)
-            ->get();
-
-        // Recent active tenants
-        $recentTenants = Rental::with(['tenant', 'house'])
-            ->whereIn('house_id', $houseIds)
-            ->where('status', 'active')
-            ->latest()
-            ->take(5)
-            ->get();
-
-        $latestRentalRequests = Rental::with(['tenant', 'house'])
-            ->whereIn('house_id', $houseIds)
-            ->where('status', 'pending')
-            ->latest()
-            ->take(5)
-            ->get();
-
-        $latestMoveOutRequests = MoveOutRequest::with(['tenant', 'house', 'rental'])
-            ->where('owner_id', Auth::id())
-            ->latest()
-            ->take(20)
-            ->get();
-
-        $pendingMoveOutRequests = MoveOutRequest::with(['tenant', 'house'])
-            ->where('owner_id', Auth::id())
-            ->where('status', 'requested')
-            ->latest()
-            ->take(5)
-            ->get();
-
-        $movedOutTenantRecords = MoveOutRequest::with(['tenant', 'house'])
-            ->where('owner_id', Auth::id())
-            ->where('status', 'completed')
-            ->latest('completed_at')
-            ->take(20)
-            ->get();
-
-        // Property list with active rental info
+        // Properties list with active rental info
         $properties = House::where('owner_id', Auth::id())
-            ->with(['rentals' => fn($q) => $q->where('status', 'active')->with('tenant')])
+            ->with(['locationModel', 'rentals' => fn($q) => $q->where('status', 'active')->with('tenant')])
             ->latest()
-            ->take(6)
+            ->get();
+
+        // Monthly payments (recurring rent payments - typically equal to monthly rent)
+        $monthlyPayments = Payment::with(['tenant', 'rental.house'])
+            ->whereHas('rental', function($q) use ($houseIds) {
+                $q->whereIn('house_id', $houseIds);
+            })
+            ->whereIn('payment_type', ['monthly_rent', 'first_month_rent'])
+            ->where('status', 'paid')
+            ->latest('payment_date')
+            ->take(10)
+            ->get();
+
+        $recentNotifications = DatabaseNotification::query()
+            ->where('notifiable_type', User::class)
+            ->where('notifiable_id', $owner->id)
+            ->latest()
+            ->take(5)
             ->get();
 
         return view('owner.dashboard', compact(
-            'owner',
-            'totalProperties', 'availableProperties', 'rentedProperties', 'pendingProperties',
-            'totalActiveTenants', 'totalRevenue', 'pendingAmount', 'overdueAmount',
-            'chartData', 'recentPayments', 'recentTenants', 'latestRentalRequests',
-            'latestMoveOutRequests', 'pendingMoveOutRequests', 'movedOutTenantRecords', 'properties'
+            'owner', 'properties', 'monthlyPayments', 'recentNotifications'
         ));
     }
 
@@ -132,7 +72,14 @@ class OwnerController extends Controller
             ->with(['locationModel', 'rentals' => fn($q) => $q->where('status', 'active')->with('tenant')]);
 
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            if ($request->status === 'rented') {
+                $query->whereHas('rentals', fn($q) => $q->where('status', 'active'));
+            } elseif ($request->status === 'available') {
+                $query->whereNotIn('status', ['pending', 'rejected'])
+                    ->whereDoesntHave('rentals', fn($q) => $q->where('status', 'active'));
+            } else {
+                $query->where('status', $request->status);
+            }
         }
         if ($request->filled('search')) {
             $query->where('title', 'like', '%' . $request->search . '%');
@@ -140,8 +87,13 @@ class OwnerController extends Controller
 
         $houses          = $query->latest()->paginate(10)->withQueryString();
         $totalProperties = House::where('owner_id', Auth::id())->count();
-        $availableCount  = House::where('owner_id', Auth::id())->where('status', 'available')->count();
-        $rentedCount     = House::where('owner_id', Auth::id())->where('status', 'rented')->count();
+        $availableCount  = House::where('owner_id', Auth::id())
+            ->whereNotIn('status', ['pending', 'rejected'])
+            ->whereDoesntHave('rentals', fn($q) => $q->where('status', 'active'))
+            ->count();
+        $rentedCount     = House::where('owner_id', Auth::id())
+            ->whereHas('rentals', fn($q) => $q->where('status', 'active'))
+            ->count();
         $pendingCount    = House::where('owner_id', Auth::id())->where('status', 'pending')->count();
 
         return view('owner.properties', compact(
@@ -200,7 +152,8 @@ class OwnerController extends Controller
         }
         if ($request->filled('month')) {
             [$year, $month] = explode('-', $request->month);
-            $query->whereYear('payment_date', $year)->whereMonth('payment_date', $month);
+            $query->whereYear(DB::raw('COALESCE(billing_month, payment_date)'), $year)
+                ->whereMonth(DB::raw('COALESCE(billing_month, payment_date)'), $month);
         }
         if ($request->filled('search')) {
             $query->whereHas('tenant', fn($q) => $q->where('name', 'like', '%' . $request->search . '%'));
@@ -208,10 +161,13 @@ class OwnerController extends Controller
 
         $payments      = $query->latest('payment_date')->paginate(15);
         $payments->appends($request->query());
-        $totalRevenue  = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))->where('status', 'paid')->sum('amount');
-        $totalPending  = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))->where('status', 'pending')->sum('amount');
-        $totalOverdue  = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))->where('status', 'overdue')->sum('amount');
-        $totalCount    = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))->count();
+        $rentQueryBase = Payment::whereHas('rental', fn($q) => $q->whereIn('house_id', $houseIds))
+            ->whereIn('payment_type', ['monthly_rent', 'first_month_rent']);
+
+        $totalRevenue  = (clone $rentQueryBase)->where('status', 'paid')->sum('amount');
+        $totalPending  = (clone $rentQueryBase)->where('status', 'pending')->sum('amount');
+        $totalOverdue  = (clone $rentQueryBase)->where('status', 'overdue')->sum('amount');
+        $totalCount    = (clone $rentQueryBase)->count();
 
         return view('owner.payments', compact(
             'payments', 'totalRevenue', 'totalPending', 'totalOverdue', 'totalCount'
@@ -363,47 +319,7 @@ class OwnerController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
-        if ($rental->status !== 'active') {
-            return back()->with('error', 'Lease can only be uploaded for active rentals.');
-        }
-
-        if ($rental->lease_status !== 'requested') {
-            return back()->with('error', 'Tenant must confirm stay before lease upload.');
-        }
-
-        $validated = $request->validate([
-            'lease_file' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
-        ]);
-
-        $storedPath = $request->file('lease_file')->store('lease-agreements', 'public');
-        $twoMonthAdvance = (float) ($rental->monthly_rent * 2);
-
-        $rental->leaseAgreement()->updateOrCreate(
-            ['rental_id' => $rental->id],
-            [
-                'owner_id' => Auth::id(),
-                'tenant_id' => $rental->tenant_id,
-                'house_id' => $rental->house_id,
-                'file_path' => $storedPath,
-                'original_name' => $request->file('lease_file')->getClientOriginalName(),
-                'monthly_rent' => (float) $rental->monthly_rent,
-                'deposit_amount' => $twoMonthAdvance,
-                'payment_status' => 'pending',
-                'lease_start_date' => $rental->start_date ?? $rental->rental_date,
-                'lease_end_date' => $rental->end_date,
-                'uploaded_at' => now(),
-            ]
-        );
-
-        if ($rental->tenant) {
-            $rental->tenant->notify(new WorkflowStatusNotification(
-                'lease_sent',
-                'Lease Sent',
-                'Owner uploaded lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Please review and proceed with advance payment of Nu. ' . number_format($twoMonthAdvance, 0) . ' (2 months).'
-            ));
-        }
-
-        return back()->with('success', 'Lease agreement uploaded with 2-month advance amount. Tenant has been notified to pay advance.');
+        return back()->with('error', 'Lease upload is handled by admin after tenant confirms stay.');
     }
 
     public function approveMoveOutRequest(Request $request, MoveOutRequest $moveOutRequest)
@@ -484,6 +400,81 @@ class OwnerController extends Controller
         return back()->with('success', 'Move-out marked as completed and rental closed.');
     }
 
+    // ── Bank details (owner managed) ──────────────────────────────────────
+
+    public function bankDetails()
+    {
+        /** @var User $owner */
+        $owner = User::query()->findOrFail(Auth::id());
+
+        $decryptedAccount = '';
+        if (! empty($owner->account_number)) {
+            try {
+                $decryptedAccount = Crypt::decryptString($owner->account_number);
+            } catch (\Throwable $e) {
+                // If decryption fails assume value is plaintext or malformed; show raw digits
+                $decryptedAccount = (string) $owner->account_number;
+            }
+        }
+
+        $digitsOnly = preg_replace('/\D+/', '', $decryptedAccount);
+        $last4 = strlen($digitsOnly) >= 4 ? substr($digitsOnly, -4) : $digitsOnly;
+        $masked = $last4 ? '**** **** ' . $last4 : null;
+
+        return view('owner.bank-details', compact('owner', 'masked'));
+    }
+
+    public function updateBankDetails(Request $request)
+    {
+        /** @var User $owner */
+        $owner = User::query()->findOrFail(Auth::id());
+
+        $bankOptions = array_keys(\App\Enums\Bank::getList());
+
+        $validated = $request->validate([
+            'bank_name' => ['nullable', 'string', 'max:50'],
+            'account_holder_name' => ['required', 'string', 'max:150'],
+            'account_number' => ['nullable', 'string', 'min:4', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:40'],
+        ]);
+
+        $data = [
+            'bank_name' => $validated['bank_name'] ?? $owner->bank_name,
+            'account_holder_name' => trim((string) $validated['account_holder_name']),
+            'phone' => $validated['phone'] ?? $owner->phone,
+        ];
+
+        // Only update account_number if provided
+        if (! empty($validated['account_number'])) {
+            try {
+                $encrypted = Crypt::encryptString(trim((string) $validated['account_number']));
+                $data['account_number'] = $encrypted;
+            } catch (\Throwable $e) {
+                Log::warning('Failed to encrypt owner account number', ['owner_id' => $owner->id, 'error' => $e->getMessage()]);
+                return back()->withErrors(['account_number' => 'Failed to secure account number. Please try again.']);
+            }
+        }
+
+        $owner->update($data + ['bank_details_updated_at' => now()]);
+
+        // Log the update (masking stored value for log)
+        $maskedForLog = null;
+        if (! empty($validated['account_number'])) {
+            $digits = preg_replace('/\D+/', '', $validated['account_number']);
+            $last4log = strlen($digits) >= 4 ? substr($digits, -4) : $digits;
+            $maskedForLog = $last4log ? '**** **** ' . $last4log : null;
+        }
+        Log::info('Owner updated bank details', ['owner_id' => $owner->id, 'bank_name' => $data['bank_name'], 'account_holder' => $data['account_holder_name'], 'account_mask' => $maskedForLog]);
+
+        $owner->notify(new WorkflowStatusNotification(
+            'bank_details_updated',
+            'Bank Details Updated',
+            'Your bank details were updated successfully.'
+        ));
+
+        return back()->with('success', 'Bank details updated successfully.');
+    }
+
     public function rejectMoveOutRequest(Request $request, MoveOutRequest $moveOutRequest)
     {
         if ((int) $moveOutRequest->owner_id !== (int) Auth::id()) {
@@ -515,119 +506,23 @@ class OwnerController extends Controller
         return back()->with('success', 'Move-out request rejected.');
     }
 
-    // ── Bank Details Management ───────────────────────────────────────────────
-
-    public function bankDetails()
-    {
-        $owner = Auth::user();
-
-        return view('owner.bank-details', compact('owner'));
-    }
-
-    public function updateBankDetails(Request $request)
-    {
-        $validated = $request->validate([
-            'bank_name' => 'required|string|max:100',
-            'account_number' => 'required|string|max:50',
-            'account_holder_name' => 'required|string|max:100',
-            'advance_payment_amount' => 'required|numeric|min:0',
-        ]);
-
-        /** @var User $user */
-        $user = Auth::user();
-        $user->bank_name = $validated['bank_name'];
-        $user->account_number = $validated['account_number'];
-        $user->account_holder_name = $validated['account_holder_name'];
-        $user->advance_payment_amount = $validated['advance_payment_amount'];
-        $user->save();
-
-        return back()->with('success', 'Bank details updated successfully. Tenants will see these details in lease agreements.');
-    }
-
     // ── Digital Lease Agreement Generation ────────────────────────────────────
 
     public function generateAndSendLease(Request $request, Rental $rental)
     {
-        if ((int) $rental->house->owner_id !== (int) Auth::id()) {
-            abort(403, 'Unauthorized action.');
-        }
-
-        if ($rental->status !== 'active') {
-            return back()->with('error', 'Lease can only be generated for active rentals.');
-        }
-
-        $leaseNotRequested = in_array($rental->lease_status, [null, '', 'not_requested'], true);
-
-        if (! $leaseNotRequested) {
-            return back()->with('error', 'Lease has already been requested for this rental.');
-        }
-
-        $validated = $request->validate([
-            'advance_amount' => 'required|numeric|min:0',
-            'lease_end_date' => 'required|date|after:today',
-        ]);
-
-        // Update rental end date
-        $rental->update([
-            'end_date' => $validated['lease_end_date'],
-            'lease_status' => 'requested',
-            'lease_requested_at' => now(),
-        ]);
-
-        // Store the advance amount on owner profile for lease generation
-        /** @var User $user */
-        $user = Auth::user();
-        $user->advance_payment_amount = $validated['advance_amount'];
-        $user->save();
-
-        // Generate digital lease
-        $leaseHtml = LeaseAgreementService::generateLeaseHTML($rental, $validated['advance_amount']);
-        $filename = "lease_rental_{$rental->id}_{$rental->tenant_id}_" . now()->timestamp . ".html";
-        Storage::disk('public')->put("leases/{$filename}", $leaseHtml);
-
-        // Create lease agreement record
-        $rental->leaseAgreement()->create([
-            'owner_id' => Auth::id(),
-            'file_path' => "leases/{$filename}",
-            'original_name' => "Lease_Agreement_{$rental->id}.html",
-            'uploaded_at' => now(),
-        ]);
-
-        // Notify tenant
-        if ($rental->tenant) {
-            $rental->tenant->notify(new WorkflowStatusNotification(
-                'lease_sent',
-                'Lease Agreement Ready',
-                'Your lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . ' has been generated. Please review it and proceed with payment.'
-            ));
-        }
-
-        return back()->with('success', 'Digital lease agreement generated and sent to tenant successfully.');
+        return back()->with('error', 'Lease agreement upload is handled by admin after the tenant selects Stay.');
     }
 
     public function viewGenerateLease(Rental $rental)
     {
-        if ((int) $rental->house->owner_id !== (int) Auth::id()) {
-            abort(403, 'Unauthorized action.');
-        }
-
-        if ($rental->status !== 'active' && $rental->status !== 'pending') {
-            abort(403, 'Can only generate lease for active or pending rentals.');
-        }
-
-        return view('owner.generate-lease', compact('rental'));
+        return redirect()->route('owner.tenants')
+            ->with('error', 'Lease agreement upload is handled by admin after tenant stay confirmation.');
     }
 
     public function viewLeasePreview(Rental $rental)
     {
-        if ((int) $rental->house->owner_id !== (int) Auth::id()) {
-            abort(403, 'Unauthorized action.');
-        }
-
-        $advanceAmount = $rental->house->owner->advance_payment_amount ?? $rental->monthly_rent;
-        $leaseHtml = LeaseAgreementService::generateLeaseHTML($rental, $advanceAmount);
-
-        return view('owner.lease-preview', ['leaseHtml' => $leaseHtml]);
+        return redirect()->route('owner.tenants')
+            ->with('error', 'Lease preview is disabled because lease is uploaded by admin.');
     }
 
     // ── Inspection Management ──────────────────────────────────────────────────
@@ -648,10 +543,11 @@ class OwnerController extends Controller
 
         $inspections = $query->latest()->paginate(10);
         $pendingCount = Inspection::whereIn('house_id', $houseIds)->where('status', 'pending')->count();
-        $approvedCount = Inspection::whereIn('house_id', $houseIds)->where('status', 'approved')->count();
-        $completedCount = Inspection::whereIn('house_id', $houseIds)->where('status', 'completed')->count();
+        $confirmedCount = Inspection::whereIn('house_id', $houseIds)->where('status', 'confirmed')->count();
+        $rescheduledCount = Inspection::whereIn('house_id', $houseIds)->where('status', 'rescheduled')->count();
+        $rejectedCount = Inspection::whereIn('house_id', $houseIds)->where('status', 'rejected')->count();
 
-        return view('owner.inspections', compact('inspections', 'pendingCount', 'approvedCount', 'completedCount'));
+        return view('owner.inspections', compact('inspections', 'pendingCount', 'confirmedCount', 'rescheduledCount', 'rejectedCount'));
     }
 
     public function approveInspection(Request $request, Inspection $inspection)
@@ -661,7 +557,7 @@ class OwnerController extends Controller
         }
 
         if ($inspection->status !== 'pending') {
-            return back()->with('error', 'Only pending inspections can be approved.');
+            return back()->with('error', 'Only pending inspections can be confirmed.');
         }
 
         $validated = $request->validate([
@@ -672,20 +568,20 @@ class OwnerController extends Controller
         $scheduledAt = Carbon::parse($validated['scheduled_at']);
 
         $inspection->update([
-            'status' => 'approved',
+            'status' => 'confirmed',
             'scheduled_at' => $scheduledAt,
             'owner_notes' => $validated['owner_notes'] ?? null,
         ]);
 
         if ($inspection->tenant) {
             $inspection->tenant->notify(new WorkflowStatusNotification(
-                'inspection_approved',
-                'Inspection Approved',
-                'Your inspection request for ' . ($inspection->house->title ?? ('Property #' . $inspection->house_id)) . ' has been approved for ' . $scheduledAt->format('d M Y, g:i A') . '.'
+                'inspection_confirmed',
+                'Inspection Confirmed',
+                'Your inspection request for ' . ($inspection->house->title ?? ('Property #' . $inspection->house_id)) . ' has been confirmed for ' . $scheduledAt->format('d M Y, g:i A') . '.'
             ));
         }
 
-        return back()->with('success', 'Inspection approved and tenant has been notified.');
+        return back()->with('success', 'Inspection confirmed and tenant has been notified.');
     }
 
     public function rejectInspection(Request $request, Inspection $inspection)
@@ -705,6 +601,7 @@ class OwnerController extends Controller
         $inspection->update([
             'status' => 'rejected',
             'owner_notes' => $validated['owner_notes'],
+            'rejection_reason' => $validated['owner_notes'],
         ]);
 
         if ($inspection->tenant) {
@@ -724,11 +621,11 @@ class OwnerController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
-        if ($inspection->status !== 'approved') {
-            return back()->with('error', 'Only approved inspections can be marked as completed.');
+        if ($inspection->status !== 'confirmed') {
+            return back()->with('error', 'Only confirmed inspections can be marked as completed.');
         }
 
-        $inspection->update(['status' => 'completed']);
+        $inspection->update(['status' => 'confirmed']);
 
         if ($inspection->tenant) {
             $inspection->tenant->notify(new WorkflowStatusNotification(
@@ -805,5 +702,48 @@ class OwnerController extends Controller
         }
 
         return response()->download(storage_path('app/public/' . $payment->payment_proof_path));
+    }
+
+    public function clearNotifications()
+    {
+        $user = Auth::user();
+
+        if (! $user) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $user->unreadNotifications->markAsRead();
+
+        return back()->with('success', 'All notifications cleared.');
+    }
+
+    // ── Monthly Earnings ──────────────────────────────────────────────────────
+
+    public function monthlyEarnings()
+    {
+        $owner = Auth::user();
+        $currentMonth = now()->format('Y-m');
+
+        // Get all settlements for this owner
+        $settlements = \App\Models\MonthlySettlement::where('owner_id', $owner->id)
+            ->orderBy('settlement_month', 'desc')
+            ->get();
+
+        // Current month data
+        $currentMonthData = \App\Models\MonthlySettlement::calculateMonthlySettlement($owner->id, $currentMonth);
+
+        // Recent payments for current month
+        $recentPayments = Payment::whereHas('rental.house', function ($query) use ($owner) {
+            $query->where('owner_id', $owner->id);
+        })
+        ->where('status', 'paid')
+        ->whereYear('payment_date', now()->year)
+        ->whereMonth('payment_date', now()->month)
+        ->with(['rental.house', 'rental.tenant'])
+        ->orderBy('payment_date', 'desc')
+        ->take(10)
+        ->get();
+
+        return view('owner.earnings', compact('settlements', 'currentMonthData', 'recentPayments', 'currentMonth'));
     }
 }

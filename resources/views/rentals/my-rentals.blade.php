@@ -50,9 +50,24 @@
                     @if($rental->notes)
                     <p class="small text-muted mt-2 mb-0 fst-italic">"{{ $rental->notes }}"</p>
                     @endif
-                    <a href="{{ route('houses.show', $rental->house) }}" class="btn btn-hrs-outline w-100 mt-3 btn-sm">
-                        View Property
-                    </a>
+                    
+                    <!-- Action Buttons -->
+                    <div class="mt-3 d-flex flex-column gap-2">
+                        @if($rental->status === 'active' && $rental->stay_decision === 'yes' && !$rental->leaseAgreement)
+                            <a href="{{ route('tenant.lease.upload.form', $rental) }}" class="btn btn-success btn-sm">
+                                <i class="fas fa-upload me-1"></i>Upload Lease Agreement
+                            </a>
+                        @elseif($rental->status === 'active' && $rental->leaseAgreement)
+                            <div class="alert alert-success alert-sm py-2 px-2 mb-0">
+                                <i class="fas fa-check-circle me-1"></i>
+                                <small>Lease agreement uploaded</small>
+                            </div>
+                        @endif
+                        
+                        <a href="{{ route('houses.show', $rental->house) }}" class="btn btn-hrs-outline btn-sm">
+                            <i class="fas fa-eye me-1"></i>View Property
+                        </a>
+                    </div>
                 </div>
                 @endif
             </div>

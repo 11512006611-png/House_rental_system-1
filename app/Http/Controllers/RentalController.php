@@ -28,7 +28,7 @@ class RentalController extends Controller
     public function store(Request $request, House $house)
     {
         $validated = $request->validate([
-            'rental_date' => 'required|date|after_or_equal:today',
+            'rental_date' => 'nullable|date|after_or_equal:today',
             'notes'       => 'nullable|string|max:500',
         ]);
 
@@ -41,14 +41,34 @@ class RentalController extends Controller
             return back()->with('error', 'You already have an active rental request for this house.');
         }
 
-        Rental::create([
+        $rental = Rental::create([
             'house_id'     => $house->id,
             'tenant_id'    => Auth::id(),
-            'rental_date'  => $validated['rental_date'],
+            'rental_date'  => $validated['rental_date'] ?? now()->toDateString(),
             'monthly_rent' => $house->price,
             'status'       => 'pending',
             'notes'        => $validated['notes'] ?? null,
         ]);
+
+        $rental->loadMissing(['tenant', 'house.owner']);
+
+        // Notify owner for direct action.
+        if ($rental->house?->owner) {
+            $rental->house->owner->notify(new WorkflowStatusNotification(
+                'rental_requested',
+                'New Rental Request',
+                'Tenant ' . ($rental->tenant->name ?? 'Unknown Tenant') . ' requested to rent ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Please review the request.'
+            ));
+        }
+
+        // Notify admins for platform-level monitoring.
+        User::where('role', 'admin')->get()->each(function ($admin) use ($rental) {
+            $admin->notify(new WorkflowStatusNotification(
+                'rental_requested_admin',
+                'New Tenant House Request',
+                'A tenant submitted a rental request for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Please review in the admin dashboard.'
+            ));
+        });
 
         return back()->with('success', 'Rental request sent successfully. The owner has been notified and will review your request.');
     }
@@ -75,22 +95,23 @@ class RentalController extends Controller
 
         $validated = $request->validate([
             'decision' => 'required|in:yes,no',
-            'message' => 'nullable|string|max:500',
+            'message' => 'required_if:decision,no|nullable|string|max:1500',
+            'move_out_date' => 'required_if:decision,no|nullable|date|after_or_equal:today',
             'lease_extension' => 'nullable|in:6_months,1_year',
         ]);
 
         $inspectionCompleted = Inspection::where('tenant_id', Auth::id())
             ->where('house_id', $rental->house_id)
-            ->where('status', 'completed')
+            ->whereIn('status', ['confirmed', 'completed'])
             ->exists();
 
         if (! $inspectionCompleted) {
             return back()->with('error', 'Inspection must be completed before you can make this decision.');
         }
 
-        $leaseNotRequested = in_array($rental->lease_status, [null, '', 'not_requested'], true);
+        $decisionPending = ! in_array($rental->stay_decision, ['yes', 'no'], true);
 
-        if (! $leaseNotRequested) {
+        if (! $decisionPending) {
             return back()->with('error', 'Stay decision was already submitted for this rental.');
         }
 
@@ -117,34 +138,107 @@ class RentalController extends Controller
                 'status' => 'active',
                 'lease_status' => 'requested',
                 'lease_requested_at' => now(),
+                'stay_decision' => 'yes',
+                'stay_decision_message' => ! empty($validated['message']) ? trim((string) $validated['message']) : null,
+                'stay_decision_at' => now(),
                 'end_date' => $endDate,
                 'notes' => trim(($rental->notes ? $rental->notes . PHP_EOL : '') . $note),
             ]);
+
+            if ($rental->house && ! in_array($rental->house->status, ['pending', 'rejected'], true)) {
+                $rental->house->update(['status' => 'rented']);
+            }
 
             if ($rental->house && $rental->house->owner) {
                 $rental->house->owner->notify(new WorkflowStatusNotification(
                     'tenant_confirmed_stay',
                     'Tenant Confirmed Stay',
-                    'Tenant confirmed stay after inspection for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Please upload the lease agreement with 2-month advance details so tenant can proceed with payment.'
+                    'Tenant confirmed stay after inspection for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Admin will upload the lease agreement and notify the tenant for review.'
                 ));
             }
+
+            User::where('role', 'admin')->get()->each(function ($admin) use ($rental, $validated) {
+                $message = 'Tenant confirmed they want to stay after inspection for '
+                    . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '.';
+
+                if (! empty($validated['message'])) {
+                    $message .= ' Tenant message: ' . trim((string) $validated['message']);
+                }
+
+                $admin->notify(new WorkflowStatusNotification(
+                    'tenant_stay_decision_yes',
+                    'Tenant Stay Decision: Wants To Stay',
+                    $message . ' Please upload the lease agreement from Admin > Rentals so tenant can review and proceed.'
+                ));
+            });
 
             return back()->with('success', 'You are currently staying in this property.');
         }
 
-        $note = 'Tenant declined stay after inspection on ' . now()->format('Y-m-d H:i');
-        if (!empty($validated['message'])) {
-            $note .= ' | Message: ' . trim($validated['message']);
+        $moveOutDate = $validated['move_out_date'];
+        $reason = trim((string) ($validated['message'] ?? 'Tenant selected Move Out after inspection.'));
+
+        $existingOpenRequest = MoveOutRequest::where('rental_id', $rental->id)
+            ->whereIn('status', ['requested', 'approved'])
+            ->exists();
+
+        $moveOutRequest = null;
+        if (! $existingOpenRequest) {
+            $moveOutRequest = MoveOutRequest::create([
+                'rental_id' => $rental->id,
+                'tenant_id' => Auth::id(),
+                'owner_id' => $rental->house->owner_id,
+                'house_id' => $rental->house_id,
+                'booking_id' => $rental->booking?->id,
+                'reason' => $reason,
+                'move_out_date' => $moveOutDate,
+                'status' => 'requested',
+            ]);
         }
 
+        $note = 'Tenant selected move-out after inspection on ' . now()->format('Y-m-d H:i')
+            . ' | Move-out date: ' . $moveOutDate
+            . ($reason ? ' | Reason: ' . $reason : '');
+
         $rental->update([
-            'status' => 'cancelled',
+            'status' => 'active',
             'lease_status' => 'rejected',
             'lease_reviewed_at' => now(),
+            'stay_decision' => 'no',
+            'stay_decision_message' => $reason,
+            'stay_decision_at' => now(),
             'notes' => trim(($rental->notes ? $rental->notes . PHP_EOL : '') . $note),
         ]);
 
-        return back()->with('success', 'Your decision has been recorded. This rental request is now closed.');
+        if ($moveOutRequest && $rental->house && $rental->house->owner) {
+            $rental->house->owner->notify(new WorkflowStatusNotification(
+                'move_out_requested',
+                'Move-Out Requested',
+                'Tenant selected move-out after inspection for ' . ($rental->house->title ?? ('Property #' . $rental->house_id))
+                . '. Planned move-out date: ' . $moveOutDate
+                . '. Reason: ' . $reason
+            ));
+        }
+
+        User::where('role', 'admin')->get()->each(function ($admin) use ($rental, $validated) {
+            $message = 'Tenant selected Move Out after inspection for '
+                . ($rental->house->title ?? ('Property #' . $rental->house_id))
+                . '. Move-out date: ' . ($validated['move_out_date'] ?? 'N/A')
+                . '. Reason: ' . trim((string) ($validated['message'] ?? 'Not provided'))
+                . '. Proceed with inspection closeout and security deposit refund.';
+
+            $admin->notify(new WorkflowStatusNotification(
+                'tenant_stay_decision_no',
+                'Tenant Decision: Move Out',
+                $message
+            ));
+        });
+
+        if ($existingOpenRequest) {
+            return back()->with('success', 'Your move-out decision is recorded. An existing move-out request is already in progress.');
+        }
+
+        return back()->with('success', 'Your move-out request has been submitted. Admin can now process security deposit refund after move-out review.');
     }
 
     public function downloadLease(LeaseAgreement $leaseAgreement)
@@ -180,109 +274,251 @@ class RentalController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
-        if ($rental->status !== 'active') {
-            return back()->with('error', 'Payment is only available after the owner accepts your request.');
-        }
-
-        $inspectionCompleted = Inspection::where('tenant_id', Auth::id())
-            ->where('house_id', $rental->house_id)
-            ->where('status', 'completed')
-            ->exists();
-
-        if (! $inspectionCompleted) {
-            return back()->with('error', 'Inspection must be completed before payment submission.');
-        }
-
         $leaseNotRequested = in_array($rental->lease_status, [null, '', 'not_requested'], true);
 
         if ($leaseNotRequested) {
             return back()->with('error', 'Please confirm Yes/No after inspection before proceeding with payment.');
         }
 
-        if ($rental->lease_status !== 'requested') {
-            return back()->with('error', 'Payment submission is not available at this stage.');
+        if ($rental->lease_status !== 'approved') {
+            return back()->with('error', 'Please accept the lease agreement before payment submission.');
         }
 
-        if (! $rental->leaseAgreement) {
+        $leaseAgreement = $rental->leaseAgreement;
+
+        if (! $leaseAgreement) {
             return back()->with('error', 'Owner must upload the lease agreement first. You can pay advance after lease upload.');
         }
 
-        $validated = $request->validate([
-            'payment_method' => 'required|in:mbob,mpay,bdbl,cash',
-            'transaction_id' => 'nullable|string|max:120|required_without:payment_proof',
-            'payment_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120|required_without:transaction_id',
-            'confirm_payment' => 'accepted',
-            'notes' => 'nullable|string|max:500',
-        ]);
-
-        $alreadyPaid = Payment::where('rental_id', $rental->id)
-            ->whereIn('verification_status', ['pending', 'verified'])
-            ->exists();
-
-        if ($alreadyPaid) {
-            return back()->with('error', 'A payment already exists for this rental and is awaiting/has completed verification.');
+        if (($leaseAgreement->tenant_review_status ?? 'pending') !== 'accepted') {
+            return back()->with('error', 'Please review and accept the lease agreement before payment submission.');
         }
 
-        $amount = (float) $rental->monthly_rent * 2;
-        $commissionRate = $this->commissionRate();
-        $commissionAmount = round($amount * ($commissionRate / 100), 2);
-        $ownerShare = round($amount - $commissionAmount, 2);
+        $inspectionCompleted = Inspection::where('tenant_id', Auth::id())
+            ->where('house_id', $rental->house_id)
+            ->whereIn('status', ['confirmed', 'completed'])
+            ->exists();
+
+        if (! $inspectionCompleted && ($leaseAgreement->tenant_review_status ?? 'pending') !== 'accepted') {
+            return back()->with('error', 'Inspection must be completed before payment submission.');
+        }
+
+        $validated = $request->validate([
+            'payment_type' => 'required|in:first_month_rent,monthly_rent',
+            'payment_method' => 'required|in:mbob,mpay,bdbl,cash',
+            'transaction_id' => 'nullable|string|max:120',
+            'payment_proof' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'confirm_payment' => 'accepted',
+            'notes' => 'nullable|string|max:500',
+            'billing_month' => 'nullable|date_format:Y-m',
+            'payment_date_selected' => 'nullable|date',
+            'payment_time_selected' => 'nullable|date_format:H:i',
+        ]);
+
+        $rental->loadMissing('payments');
+
+        $monthlyRent = (float) $rental->monthly_rent;
+        $commissionRate = $rental->house?->admin_commission_rate !== null
+            ? (float) $rental->house->admin_commission_rate
+            : $this->commissionRate();
 
         $paymentProofPath = null;
         if ($request->hasFile('payment_proof')) {
             $paymentProofPath = $request->file('payment_proof')->store('payments/proofs', 'public');
         }
 
-        $payment = Payment::create([
-            'tenant_id' => Auth::id(),
-            'rental_id' => $rental->id,
-            'amount' => $amount,
-            'commission_rate' => $commissionRate,
-            'commission_amount' => $commissionAmount,
-            'owner_share_amount' => $ownerShare,
-            'payment_date' => now()->toDateString(),
-            'payment_method' => $validated['payment_method'],
-            'transaction_id' => $validated['transaction_id'] ?? null,
-            'payment_proof_path' => $paymentProofPath,
-            'status' => 'pending',
-            'verification_status' => 'pending',
-            'notes' => $validated['notes'] ?? ('Tenant submitted payment via ' . strtoupper($validated['payment_method']) . ' from dashboard.'),
-        ]);
+        if ($validated['payment_type'] === 'first_month_rent') {
+            $alreadyPaid = $rental->payments
+                ->whereIn('verification_status', ['pending', 'verified'])
+                ->isNotEmpty();
 
-        if ($rental->house && $rental->house->owner_id) {
-            AdminCommissionTransaction::updateOrCreate(
-                ['payment_id' => $payment->id],
-                [
-                    'tenant_id' => Auth::id(),
-                    'owner_id' => $rental->house->owner_id,
-                    'property_id' => $rental->house_id,
-                    'payment_amount' => $amount,
-                    'admin_commission' => $commissionAmount,
-                    'owner_share' => $ownerShare,
-                    'transaction_date' => now()->toDateString(),
-                    'status' => 'pending',
-                    'notes' => 'Awaiting payment verification.',
-                ]
-            );
+            if ($alreadyPaid) {
+                return back()->with('error', 'A payment already exists for this rental and is awaiting/has completed verification.');
+            }
+
+            $securityDeposit = (float) ($rental->house->security_deposit_amount ?? $monthlyRent);
+            // Advance now requires two months (rent + service fee per month) plus security deposit
+            $breakdown = Payment::calculateAdvanceBreakdown($monthlyRent * 2, $securityDeposit, $commissionRate);
+
+            $firstMonthPayment = Payment::create([
+                'tenant_id' => Auth::id(),
+                'rental_id' => $rental->id,
+                'booking_id' => $rental->booking_id,
+                'amount' => $breakdown['rent_payable_amount'],
+                'rent_amount' => $breakdown['rent_amount'],
+                'service_fee_rate' => $breakdown['service_fee_rate'],
+                'service_fee_amount' => $breakdown['service_fee_amount'],
+                'commission_rate' => $commissionRate,
+                'commission_amount' => $breakdown['service_fee_amount'],
+                'owner_share_amount' => $breakdown['owner_share_amount'],
+                'payment_date' => now()->toDateString(),
+                'payment_method' => $validated['payment_method'],
+                'payment_type' => 'first_month_rent',
+                'transaction_id' => $validated['transaction_id'] ?? null,
+                'payment_proof_path' => $paymentProofPath,
+                'status' => 'pending',
+                'verification_status' => 'pending',
+                'notes' => $validated['notes'] ?? ('Tenant submitted first month rent payment via ' . strtoupper($validated['payment_method']) . ' from dashboard.'),
+            ]);
+
+            $securityDepositPayment = Payment::create([
+                'tenant_id' => Auth::id(),
+                'rental_id' => $rental->id,
+                'booking_id' => $rental->booking_id,
+                'amount' => $breakdown['security_deposit_amount'],
+                'security_deposit_amount' => $breakdown['security_deposit_amount'],
+                'commission_rate' => 0,
+                'commission_amount' => 0,
+                'owner_share_amount' => 0,
+                'held_by_admin' => true,
+                'payment_date' => now()->toDateString(),
+                'payment_method' => $validated['payment_method'],
+                'payment_type' => 'security_deposit',
+                'transaction_id' => $validated['transaction_id'] ?? null,
+                'payment_proof_path' => $paymentProofPath,
+                'status' => 'pending',
+                'verification_status' => 'pending',
+                'notes' => $validated['notes'] ?? ('Tenant submitted security deposit payment via ' . strtoupper($validated['payment_method']) . ' from dashboard.'),
+            ]);
+
+            if ($rental->house && $rental->house->owner_id) {
+                AdminCommissionTransaction::updateOrCreate(
+                    ['payment_id' => $firstMonthPayment->id],
+                    [
+                        'tenant_id' => Auth::id(),
+                        'owner_id' => $rental->house->owner_id,
+                        'property_id' => $rental->house_id,
+                        'payment_amount' => $breakdown['rent_payable_amount'],
+                        'admin_commission' => $breakdown['service_fee_amount'],
+                        'owner_share' => $breakdown['owner_share_amount'],
+                        'transaction_date' => now()->toDateString(),
+                        'status' => 'pending',
+                        'notes' => 'First month rent payment awaiting verification.',
+                    ]
+                );
+
+                AdminCommissionTransaction::updateOrCreate(
+                    ['payment_id' => $securityDepositPayment->id],
+                    [
+                        'tenant_id' => Auth::id(),
+                        'owner_id' => $rental->house->owner_id,
+                        'property_id' => $rental->house_id,
+                        'payment_amount' => $breakdown['security_deposit_amount'],
+                        'admin_commission' => 0,
+                        'owner_share' => 0,
+                        'transaction_date' => now()->toDateString(),
+                        'status' => 'pending',
+                        'notes' => 'Security deposit held by admin awaiting verification.',
+                    ]
+                );
+            }
+
+            if ($rental->house && $rental->house->owner) {
+                $rental->house->owner->notify(new WorkflowStatusNotification(
+                    'payment_submitted',
+                    'Advance Payment Submitted',
+                    'Tenant submitted advance payment (first month rent + security deposit) via ' . strtoupper($validated['payment_method']) . ' for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Waiting for admin verification.'
+                ));
+            }
+
+            User::where('role', 'admin')->get()->each(function ($admin) use ($rental) {
+                $admin->notify(new WorkflowStatusNotification(
+                    'payment_pending_verification',
+                    'Advance Payment Verification Needed',
+                    'Advance payment proofs (first month rent + security deposit) are waiting verification for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '.'
+                ));
+            });
+
+            return redirect()->route('tenant.dashboard')->with('success', 'Advance payment submitted successfully. Waiting for admin verification.');
+        } elseif ($validated['payment_type'] === 'monthly_rent') {
+            $securityDepositDue = (float) ($rental->leaseAgreement?->security_deposit_amount ?? $rental->house?->security_deposit_amount ?? 0);
+            $advancePayments = $rental->payments->whereIn('payment_type', ['first_month_rent', 'security_deposit']);
+            $verifiedTypes = $advancePayments->where('verification_status', 'verified')->pluck('payment_type')->unique();
+            $requiredTypes = ['first_month_rent'];
+            if ($securityDepositDue > 0) {
+                $requiredTypes[] = 'security_deposit';
+            }
+
+            $advanceFullyVerified = collect($requiredTypes)->every(fn ($type) => $verifiedTypes->contains($type));
+
+            if (! $advanceFullyVerified) {
+                return back()->with('error', 'Advance payment must be fully verified before submitting monthly rent.');
+            }
+
+            $monthlyRentPaidThisMonth = $rental->payments
+                ->where('payment_type', 'monthly_rent')
+                ->filter(function ($payment) {
+                    $selectedMonth = $validated['billing_month'] ? \Carbon\Carbon::createFromFormat('Y-m', $validated['billing_month'])->startOfMonth() : now()->startOfMonth();
+                    return ($payment->billing_month && $payment->billing_month->isSameMonth($selectedMonth))
+                        || (! $payment->billing_month && $payment->payment_date && $payment->payment_date->isSameMonth($selectedMonth));
+                })
+                ->whereIn('verification_status', ['pending', 'verified'])
+                ->isNotEmpty();
+
+            if ($monthlyRentPaidThisMonth) {
+                $monthText = $validated['billing_month'] ? \Carbon\Carbon::createFromFormat('Y-m', $validated['billing_month'])->format('F Y') : now()->format('F Y');
+                return back()->with('error', 'You already have a monthly rent payment submitted for ' . $monthText . '.');
+            }
+
+            $breakdown = Payment::calculateAdvanceBreakdown($monthlyRent, 0, $commissionRate);
+
+            $monthlyPayment = Payment::create([
+                'tenant_id' => Auth::id(),
+                'rental_id' => $rental->id,
+                'booking_id' => $rental->booking_id,
+                'amount' => $breakdown['rent_payable_amount'],
+                'rent_amount' => $breakdown['rent_amount'],
+                'service_fee_rate' => $breakdown['service_fee_rate'],
+                'service_fee_amount' => $breakdown['service_fee_amount'],
+                'commission_rate' => $commissionRate,
+                'commission_amount' => $breakdown['service_fee_amount'],
+                'owner_share_amount' => $breakdown['owner_share_amount'],
+                'payment_date' => $validated['payment_date_selected'] ?? now()->toDateString(),
+                'billing_month' => $validated['billing_month'] ? $validated['billing_month'] . '-01' : now()->startOfMonth()->toDateString(),
+                'payment_method' => $validated['payment_method'],
+                'payment_type' => 'monthly_rent',
+                'transaction_id' => $validated['transaction_id'] ?? null,
+                'payment_proof_path' => $paymentProofPath,
+                'status' => 'pending',
+                'verification_status' => 'pending',
+                'notes' => $validated['notes'] ?? ('Tenant submitted monthly rent payment via ' . strtoupper($validated['payment_method']) . ' from dashboard.'),
+            ]);
+
+            if ($rental->house && $rental->house->owner_id) {
+                AdminCommissionTransaction::updateOrCreate(
+                    ['payment_id' => $monthlyPayment->id],
+                    [
+                        'tenant_id' => Auth::id(),
+                        'owner_id' => $rental->house->owner_id,
+                        'property_id' => $rental->house_id,
+                        'payment_amount' => $breakdown['rent_payable_amount'],
+                        'admin_commission' => $breakdown['service_fee_amount'],
+                        'owner_share' => $breakdown['owner_share_amount'],
+                        'transaction_date' => now()->toDateString(),
+                        'status' => 'pending',
+                        'notes' => 'Monthly rent payment awaiting verification for ' . now()->format('F Y') . '.',
+                    ]
+                );
+            }
+
+            if ($rental->house && $rental->house->owner) {
+                $rental->house->owner->notify(new WorkflowStatusNotification(
+                    'monthly_payment_submitted',
+                    'Monthly Rent Submitted',
+                    'Tenant submitted monthly rent payment for ' . ($validated['billing_month'] ? \Carbon\Carbon::createFromFormat('Y-m', $validated['billing_month'])->format('F Y') : now()->format('F Y')) . ' via ' . strtoupper($validated['payment_method']) . ' for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Waiting for admin verification.'
+                ));
+            }
+
+            User::where('role', 'admin')->get()->each(function ($admin) use ($rental) {
+                $admin->notify(new WorkflowStatusNotification(
+                    'monthly_payment_verification_needed',
+                    'Monthly Rent Verification Needed',
+                    'A monthly rent payment proof for ' . now()->format('F Y') . ' is waiting verification for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '.'
+                ));
+            });
+
+            return redirect()->route('tenant.dashboard')->with('success', 'Monthly rent submitted successfully. Waiting for admin verification.');
         }
-
-        if ($rental->house && $rental->house->owner) {
-            $rental->house->owner->notify(new WorkflowStatusNotification(
-                'payment_submitted',
-                'Payment Submitted',
-                'Tenant submitted advance payment via ' . strtoupper($validated['payment_method']) . ' for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Waiting for admin verification.'
-            ));
-        }
-
-        User::where('role', 'admin')->get()->each(function ($admin) use ($rental) {
-            $admin->notify(new WorkflowStatusNotification(
-                'payment_pending_verification',
-                'Payment Verification Needed',
-                'A payment proof is waiting verification for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '.'
-            ));
-        });
-
-        return redirect()->route('tenant.dashboard')->with('success', 'Payment submitted successfully. Waiting for owner verification.');
     }
 
     public function acceptAgreement(Rental $rental)
@@ -307,14 +543,15 @@ class RentalController extends Controller
         $leaseAgreement->update([
             'tenant_signature_name' => Auth::user()->name,
             'tenant_signed_at' => now(),
+            'tenant_review_status' => 'accepted',
+            'tenant_reviewed_at' => now(),
+            'tenant_review_note' => null,
         ]);
 
-        if ($leaseAgreement->owner_signed_at) {
-            $rental->update([
-                'lease_status' => 'approved',
-                'lease_reviewed_at' => now(),
-            ]);
-        }
+        $rental->update([
+            'lease_status' => 'approved',
+            'lease_reviewed_at' => now(),
+        ]);
 
         LeaseAgreementService::regeneratePdf($leaseAgreement->fresh());
 
@@ -322,11 +559,75 @@ class RentalController extends Controller
             $rental->house->owner->notify(new WorkflowStatusNotification(
                 'agreement_accepted_by_tenant',
                 'Agreement Accepted',
-                'Tenant accepted the agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Waiting for owner approval.'
+                'Tenant accepted the agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. The tenant can now submit advance payment.'
             ));
         }
 
-        return back()->with('success', 'Agreement accepted digitally.');
+        User::where('role', 'admin')->get()->each(function ($admin) use ($rental) {
+            $admin->notify(new WorkflowStatusNotification(
+                'agreement_accepted_by_tenant',
+                'Tenant Accepted Lease Agreement',
+                'Tenant accepted the lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Awaiting advance payment submission.'
+            ));
+        });
+
+        return redirect()->route('houses.show', $rental->house)->with('success', 'Agreement accepted! Please proceed with the advance payment.')->with('openPaymentModal', true);
+    }
+
+    public function rejectAgreement(Request $request, Rental $rental)
+    {
+        if ((int) $rental->tenant_id !== (int) Auth::id()) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        if ($rental->lease_status !== 'requested') {
+            return back()->with('error', 'Agreement rejection is not available at this stage.');
+        }
+
+        $leaseAgreement = $rental->leaseAgreement;
+        if (! $leaseAgreement) {
+            return back()->with('error', 'Agreement has not been generated yet.');
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => 'required|string|min:3|max:1500',
+        ]);
+
+        $reason = trim((string) $validated['rejection_reason']);
+
+        $leaseAgreement->update([
+            'tenant_review_status' => 'rejected',
+            'tenant_reviewed_at' => now(),
+            'tenant_review_note' => $reason,
+            'tenant_signature_name' => null,
+            'tenant_signed_at' => null,
+        ]);
+
+        $rental->update([
+            'lease_status' => 'rejected',
+            'lease_reviewed_at' => now(),
+            'notes' => trim((string) ($rental->notes
+                ? $rental->notes . PHP_EOL
+                : '') . 'Tenant rejected lease agreement: ' . $reason),
+        ]);
+
+        if ($rental->house && $rental->house->owner) {
+            $rental->house->owner->notify(new WorkflowStatusNotification(
+                'agreement_rejected_by_tenant',
+                'Agreement Rejected',
+                'Tenant rejected the lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Reason: ' . $reason
+            ));
+        }
+
+        User::where('role', 'admin')->get()->each(function ($admin) use ($rental, $reason) {
+            $admin->notify(new WorkflowStatusNotification(
+                'agreement_rejected_by_tenant',
+                'Tenant Rejected Lease Agreement',
+                'Tenant rejected the lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '. Reason: ' . $reason
+            ));
+        });
+
+        return back()->with('success', 'Agreement rejected and admin has been notified.');
     }
 
     public function requestMoveOut(Request $request, Rental $rental)
@@ -357,6 +658,7 @@ class RentalController extends Controller
             'tenant_id' => Auth::id(),
             'owner_id' => $rental->house->owner_id,
             'house_id' => $rental->house_id,
+            'booking_id' => $rental->booking?->id,
             'reason' => $validated['reason'],
             'move_out_date' => $validated['move_out_date'],
             'status' => 'requested',
@@ -366,15 +668,19 @@ class RentalController extends Controller
             $rental->house->owner->notify(new WorkflowStatusNotification(
                 'move_out_requested',
                 'Move-Out Requested',
-                'Tenant requested move-out for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '.'
+                'Tenant requested move-out for ' . ($rental->house->title ?? ('Property #' . $rental->house_id))
+                . '. Planned move-out date: ' . $validated['move_out_date']
+                . '. Reason: ' . trim($validated['reason'])
             ));
         }
 
-        User::where('role', 'admin')->get()->each(function ($admin) use ($rental) {
+        User::where('role', 'admin')->get()->each(function ($admin) use ($rental, $validated) {
             $admin->notify(new WorkflowStatusNotification(
                 'move_out_requested',
                 'Move-Out Requested',
-                'A tenant requested move-out for ' . ($rental->house->title ?? ('Property #' . $rental->house_id)) . '.'
+                'A tenant requested move-out for ' . ($rental->house->title ?? ('Property #' . $rental->house_id))
+                . '. Planned move-out date: ' . $validated['move_out_date']
+                . '. Reason: ' . trim($validated['reason'])
             ));
         });
 
@@ -385,4 +691,85 @@ class RentalController extends Controller
 
         return back()->with('success', 'Move-out request submitted successfully.');
     }
+
+    /**
+     * Show the lease upload form for tenants
+     */
+    public function showLeaseUploadForm(Rental $rental)
+    {
+        // Verify tenant owns this rental
+        if ((int) $rental->tenant_id !== (int) Auth::id()) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        // Check if rental is in correct status
+        if ($rental->status !== 'active' || $rental->stay_decision !== 'yes') {
+            return back()->with('error', 'Lease upload is only available after confirming stay.');
+        }
+
+        $leaseAgreement = $rental->leaseAgreement;
+
+        return view('tenant.lease-upload', compact('rental', 'leaseAgreement'));
+    }
+
+    /**
+     * Upload lease agreement for tenants
+     */
+    public function uploadLeaseAgreement(Request $request, Rental $rental)
+    {
+        // Verify tenant owns this rental
+        if ((int) $rental->tenant_id !== (int) Auth::id()) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        // Check if rental is in correct status
+        if ($rental->status !== 'active' || $rental->stay_decision !== 'yes') {
+            return back()->with('error', 'Lease upload is only available after confirming stay.');
+        }
+
+        // Check if lease agreement already exists
+        if ($rental->leaseAgreement) {
+            return back()->with('error', 'Lease agreement already uploaded for this rental.');
+        }
+
+        $validated = $request->validate([
+            'file' => 'required|file|mimes:pdf|max:10240', // 10MB max
+        ]);
+
+        try {
+            $file = $validated['file'];
+            $originalName = $file->getClientOriginalName();
+            
+            // Store file in storage/app/private/lease-agreements
+            $path = $file->storeAs(
+                'lease-agreements',
+                'rental_' . $rental->id . '_' . time() . '.pdf',
+                'private'
+            );
+
+            // Create lease agreement record
+            LeaseAgreement::create([
+                'rental_id'     => $rental->id,
+                'owner_id'      => $rental->house->owner_id,
+                'file_path'     => $path,
+                'original_name' => $originalName,
+                'uploaded_at'   => now(),
+            ]);
+
+            // Update lease status
+            $rental->update(['lease_status' => 'requested']);
+
+            // Notify owner about the lease agreement upload
+            $rental->house->owner->notify(new WorkflowStatusNotification(
+                'Lease Agreement Uploaded',
+                'Tenant ' . Auth::user()->name . ' uploaded a lease agreement for ' . ($rental->house->title ?? ('Property #' . $rental->house_id))
+            ));
+
+            return back()->with('success', 'Lease agreement uploaded successfully. Owner will review and sign.');
+        } catch (\Exception $e) {
+            \Log::error('Lease agreement upload error: ' . $e->getMessage());
+            return back()->with('error', 'Failed to upload lease agreement. Please try again.');
+        }
+    }
 }
+

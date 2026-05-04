@@ -128,7 +128,7 @@
                     <td class="text-muted small">{{ ucfirst($h->property_type ?? '—') }}</td>
                     <td class="text-end fw-600" style="font-size:.85rem;">Nu. {{ number_format($h->price, 0) }}</td>
                     <td class="text-center">
-                        @php $s = $h->status; @endphp
+                        @php $s = (($h->active_rentals_count ?? 0) > 0) ? 'rented' : $h->status; @endphp
                         @if($s === 'available')   <span class="chip chip-green">Available</span>
                         @elseif($s === 'rented')  <span class="chip chip-blue">Rented</span>
                         @elseif($s === 'pending') <span class="chip chip-yellow">Pending</span>
@@ -137,48 +137,62 @@
                         @endif
                     </td>
                     <td class="text-center">
+                        @php
+                            $canDelete = (($h->active_rentals_count ?? 0) === 0) && (($h->rentals_count ?? 0) === 0);
+                        @endphp
                         <div class="d-flex gap-1 justify-content-center">
+                            <a href="{{ route('admin.properties.show', $h->id) }}"
+                               class="btn btn-xs btn-outline-primary"
+                               style="font-size:.72rem;padding:.2rem .5rem;"
+                               title="View property details">
+                                <i class="fas fa-eye me-1"></i>View
+                            </a>
                             @if($s === 'pending')
-                            <form action="{{ route('admin.properties.approve', $h->id) }}" method="POST" class="m-0">
-                                @csrf
-                                <button type="submit" class="btn btn-xs btn-success"
-                                    style="font-size:.72rem;padding:.2rem .5rem;"
-                                    onclick="return confirm('Approve this property?')"
-                                    title="Approve">
-                                    <i class="fas fa-check me-1"></i>Approve
-                                </button>
-                            </form>
-                            <form action="{{ route('admin.properties.reject', $h->id) }}" method="POST" class="m-0">
-                                @csrf
-                                <button type="submit" class="btn btn-xs btn-danger"
-                                    style="font-size:.72rem;padding:.2rem .5rem;"
-                                    onclick="return confirm('Reject this property?')"
-                                    title="Reject">
-                                    <i class="fas fa-times me-1"></i>Reject
-                                </button>
-                            </form>
+                            <a href="{{ route('admin.properties.show', $h->id) }}"
+                               class="btn btn-xs btn-warning"
+                               style="font-size:.72rem;padding:.2rem .5rem;"
+                               title="Inspect and decide">
+                                <i class="fas fa-clipboard-check me-1"></i>Inspect
+                            </a>
                             @elseif($s === 'available')
-                            <form action="{{ route('admin.properties.reject', $h->id) }}" method="POST" class="m-0">
-                                @csrf
-                                <button type="submit" class="btn btn-xs btn-outline-danger"
-                                    style="font-size:.72rem;padding:.2rem .5rem;"
-                                    onclick="return confirm('Reject this property? It will be removed from listings.')"
-                                    title="Reject">
-                                    <i class="fas fa-ban me-1"></i>Reject
-                                </button>
-                            </form>
+                            <a href="{{ route('admin.properties.show', $h->id) }}"
+                               class="btn btn-xs btn-outline-secondary"
+                               style="font-size:.72rem;padding:.2rem .5rem;"
+                               title="Review inspection record">
+                                <i class="fas fa-file-alt me-1"></i>Review
+                            </a>
                             @elseif($s === 'rejected')
-                            <form action="{{ route('admin.properties.approve', $h->id) }}" method="POST" class="m-0">
+                            <a href="{{ route('admin.properties.show', $h->id) }}"
+                               class="btn btn-xs btn-outline-warning"
+                               style="font-size:.72rem;padding:.2rem .5rem;"
+                               title="Re-inspect before re-approval">
+                                <i class="fas fa-rotate-right me-1"></i>Re-inspect
+                            </a>
+                            @else
+                            <span class="text-muted small">—</span>
+                            @endif
+
+                            @if($canDelete)
+                                <form method="POST" action="{{ route('houses.destroy', $h->id) }}"
+                                  onsubmit="return confirm('Delete this property permanently? This action cannot be undone.');"
+                                  class="d-inline">
                                 @csrf
-                                <button type="submit" class="btn btn-xs btn-outline-success"
-                                    style="font-size:.72rem;padding:.2rem .5rem;"
-                                    onclick="return confirm('Re-approve this property?')"
-                                    title="Re-approve">
-                                    <i class="fas fa-rotate-right me-1"></i>Re-approve
+                                @method('DELETE')
+                                <button type="submit"
+                                        class="btn btn-xs btn-outline-danger"
+                                        style="font-size:.72rem;padding:.2rem .5rem;"
+                                        title="Delete property">
+                                    <i class="fas fa-trash me-1"></i>Delete
                                 </button>
                             </form>
                             @else
-                            <span class="text-muted small">—</span>
+                            <button type="button"
+                                    class="btn btn-xs btn-outline-secondary"
+                                    style="font-size:.72rem;padding:.2rem .5rem;"
+                                    title="Cannot delete properties with rental history"
+                                    disabled>
+                                <i class="fas fa-trash me-1"></i>Delete
+                            </button>
                             @endif
                         </div>
                     </td>

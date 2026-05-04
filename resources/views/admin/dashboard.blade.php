@@ -12,6 +12,47 @@
 .quick-actions .qa-btn.qa-purple { background:#faf5ff; color:#9333ea; border-color:#e9d5ff; }
 .quick-actions .qa-btn.qa-teal   { background:#f0fdfa; color:#0d9488; border-color:#99f6e4; }
 .quick-actions .qa-btn.qa-red    { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+
+.workflow-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1rem;
+    transition: box-shadow 0.2s;
+}
+.workflow-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.workflow-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    font-size: 1.2rem;
+}
+.bg-purple-soft { background: #faf5ff; }
+.bg-teal-soft { background: #f0fdfa; }
+.bg-red-soft { background: #fef2f2; }
+.bg-green-soft { background: #f0fdf4; }
+.bg-orange-soft { background: #fff7ed; }
+.text-purple { color: #9333ea; }
+.text-teal { color: #0d9488; }
+.text-red { color: #dc2626; }
+.text-green { color: #16a34a; }
+.text-orange { color: #ea580c; }
+.btn-outline-purple { border-color: #9333ea; color: #9333ea; }
+.btn-outline-purple:hover { background: #9333ea; color: #fff; }
+.btn-outline-teal { border-color: #0d9488; color: #0d9488; }
+.btn-outline-teal:hover { background: #0d9488; color: #fff; }
+.btn-outline-red { border-color: #dc2626; color: #dc2626; }
+.btn-outline-red:hover { background: #dc2626; color: #fff; }
+.btn-outline-green { border-color: #16a34a; color: #16a34a; }
+.btn-outline-green:hover { background: #16a34a; color: #fff; }
+.btn-outline-orange { border-color: #ea580c; color: #ea580c; }
+.btn-outline-orange:hover { background: #ea580c; color: #fff; }
 </style>
 @endpush
 
@@ -26,10 +67,10 @@
         </p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-        @if($pendingUsers + $pendingProperties + $pendingRentals > 0)
+        @if($pendingUsers + $pendingProperties + $pendingRentals + ($openMoveOutRequests ?? 0) + ($pendingRefunds ?? 0) + ($pendingAdvancePayments ?? 0) > 0)
         <span class="badge bg-danger align-self-center fs-6 px-3 py-2">
             <i class="fas fa-bell me-1"></i>
-            {{ $pendingUsers + $pendingProperties + $pendingRentals }} Actions Needed
+            {{ $pendingUsers + $pendingProperties + $pendingRentals + ($openMoveOutRequests ?? 0) + ($pendingRefunds ?? 0) + ($pendingAdvancePayments ?? 0) }} Actions Needed
         </span>
         @endif
         <a href="{{ route('admin.settings') }}" class="btn btn-sm btn-outline-secondary">
@@ -38,6 +79,38 @@
     </div>
 </div>
 
+@if(($pendingAgreements ?? 0) > 0)
+<div class="alert alert-info border-0 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4" style="background:#eff6ff;color:#1e3a8a;">
+    <div>
+        <div class="fw-semibold">
+            <i class="fas fa-bell me-2"></i>New Stay Confirmed - Upload Lease Now
+        </div>
+        <div class="small mt-1">
+            {{ $pendingAgreements }} rental{{ (int) $pendingAgreements === 1 ? '' : 's' }} waiting for admin lease upload.
+        </div>
+    </div>
+    <a href="{{ route('admin.rentals') }}?lease_queue=1" class="btn btn-primary btn-sm">
+        <i class="fas fa-upload me-1"></i>Open Lease Upload Queue
+    </a>
+</div>
+@endif
+
+@if(($stayPendingCount ?? 0) > 0)
+<div class="alert alert-warning border-0 shadow-sm d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4" style="background:#fff7ed;color:#9a3412;">
+    <div>
+        <div class="fw-semibold">
+            <i class="fas fa-circle-question me-2"></i>Tenant Stay Decision Pending
+        </div>
+        <div class="small mt-1">
+            {{ $stayPendingCount }} rental{{ (int) $stayPendingCount === 1 ? '' : 's' }} still waiting for the tenant to choose Stay or Move Out after inspection.
+        </div>
+    </div>
+    <a href="{{ route('admin.rentals') }}?stay_decision=pending" class="btn btn-warning btn-sm">
+        <i class="fas fa-eye me-1"></i>Review Stay Pending
+    </a>
+</div>
+@endif
+
 {{-- â”€â”€ Quick Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ --}}
 <div class="admin-card mb-4">
     <div class="admin-card-header">
@@ -45,39 +118,69 @@
     </div>
     <div class="p-3 quick-actions">
         <div class="qa-grid">
-            <a href="{{ route('admin.pending') }}" class="qa-btn qa-red">
-                <i class="fas fa-user-clock"></i>
-                <span>Approve Users<br>
-                    @if($pendingUsers > 0)<span class="badge bg-danger">{{ $pendingUsers }}</span>@endif
+            <a href="{{ route('admin.dashboard') }}" class="qa-btn qa-green">
+                <i class="fas fa-house"></i>
+                <span>🏠 Dashboard</span>
+            </a>
+            <a href="{{ route('admin.users') }}" class="qa-btn qa-blue">
+                <i class="fas fa-user"></i>
+                <span>👤 Users</span>
+            </a>
+            <a href="{{ route('admin.properties') }}" class="qa-btn qa-orange">
+                <i class="fas fa-building"></i>
+                <span>🏢 Properties</span>
+            </a>
+            <a href="{{ route('admin.inspections') }}" class="qa-btn qa-purple">
+                <i class="fas fa-search"></i>
+                <span>🔍 Inspections<br>
+                    @if(($pendingInspections ?? 0) > 0)<span class="badge bg-warning text-dark">{{ $pendingInspections }}</span>@endif
                 </span>
             </a>
-            <a href="{{ route('admin.properties') }}?status=pending" class="qa-btn qa-blue">
-                <i class="fas fa-house-circle-check"></i>
-                <span>Review Properties<br>
-                    @if($pendingProperties > 0)<span class="badge bg-warning text-dark">{{ $pendingProperties }}</span>@endif
+            <a href="{{ route('admin.rentals') }}?lease_queue=1" class="qa-btn qa-teal">
+                <i class="fas fa-file-contract"></i>
+                <span>📑 Lease Requests<br>
+                    @if(($pendingAgreements ?? 0) > 0)<span class="badge bg-success">{{ $pendingAgreements }}</span>@endif
                 </span>
             </a>
-            <a href="{{ route('admin.owners') }}" class="qa-btn qa-green">
-                <i class="fas fa-user-tie"></i>
-                <span>Manage Owners</span>
+            <a href="{{ route('admin.rentals') }}" class="qa-btn qa-red">
+                <i class="fas fa-file-signature"></i>
+                <span>📄 Agreements<br>
+                    @if(($pendingAgreements ?? 0) > 0)<span class="badge bg-danger">{{ $pendingAgreements }}</span>@endif
+                </span>
             </a>
-            <a href="{{ route('admin.tenants') }}" class="qa-btn qa-orange">
-                <i class="fas fa-users"></i>
-                <span>Manage Tenants</span>
+            <a href="{{ route('admin.transactions') }}" class="qa-btn qa-green">
+                <i class="fas fa-money-bill-wave"></i>
+                <span>💰 Payments<br>
+                    @if(($pendingPayments ?? 0) > 0)<span class="badge bg-info">{{ $pendingPayments }}</span>@endif
+                </span>
             </a>
-            <a href="{{ route('admin.transactions') }}" class="qa-btn qa-purple">
-                <i class="fas fa-money-bill-transfer"></i>
-                <span>Transactions</span>
-            </a>
-            <a href="{{ route('admin.settings') }}" class="qa-btn qa-teal">
-                <i class="fas fa-percent"></i>
-                <span>Commission<br><small class="fw-bold">{{ $rate }}%</small></span>
+            <a href="{{ route('admin.transactions') }}?type=advance" class="qa-btn qa-green">
+                <i class="fas fa-hand-holding-dollar"></i>
+                <span>💳 Advance Payment<br>
+                    @if(($pendingAdvancePayments ?? 0) > 0)<span class="badge bg-warning text-dark">{{ $pendingAdvancePayments }}</span>@endif
+                </span>
             </a>
             <a href="{{ route('admin.rentals') }}" class="qa-btn qa-orange">
-                <i class="fas fa-truck-moving"></i>
-                <span>Move-Out Requests<br>
+                <i class="fas fa-door-open"></i>
+                <span>🚪 Move-Out<br>
                     @if(($openMoveOutRequests ?? 0) > 0)<span class="badge bg-warning text-dark">{{ $openMoveOutRequests }}</span>@endif
                 </span>
+            </a>
+            <a href="{{ route('admin.refunds.index') }}" class="qa-btn qa-teal">
+                <i class="fas fa-rotate-left"></i>
+                <span>💸 Refunds<br>
+                    @if(($pendingRefunds ?? 0) > 0)<span class="badge bg-success">{{ $pendingRefunds }}</span>@endif
+                </span>
+            </a>
+            <a href="{{ route('admin.maintenance') }}" class="qa-btn qa-red">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>⚠ Complaints<br>
+                    @if(($pendingComplaints ?? 0) > 0)<span class="badge bg-danger">{{ $pendingComplaints }}</span>@endif
+                </span>
+            </a>
+            <a href="{{ route('admin.reports') }}" class="qa-btn qa-purple">
+                <i class="fas fa-chart-bar"></i>
+                <span>📊 Reports</span>
             </a>
         </div>
     </div>
@@ -187,6 +290,14 @@
                 <div class="fw-bold" style="color:#0f172a;font-size:1.1rem;">{{ number_format($commissionTransactions) }}</div>
             </div>
             <div class="col-md-3 col-6">
+                <div class="small text-muted text-uppercase" style="letter-spacing:.05em;">Advance Payments</div>
+                <div class="fw-bold" style="color:#0f172a;font-size:1.1rem;">{{ number_format($pendingAdvancePayments ?? 0) }}</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="small text-muted text-uppercase" style="letter-spacing:.05em;">Verified Advance Amount</div>
+                <div class="fw-bold" style="color:#0f172a;font-size:1.1rem;">Nu. {{ number_format($verifiedAdvancePayments ?? 0, 0) }}</div>
+            </div>
+            <div class="col-md-3 col-6">
                 <div class="small text-muted text-uppercase" style="letter-spacing:.05em;">Open Move-Out Requests</div>
                 <div class="fw-bold" style="color:#ea580c;font-size:1.1rem;">{{ number_format($openMoveOutRequests ?? 0) }}</div>
             </div>
@@ -194,8 +305,113 @@
     </div>
 </div>
 
+{{-- â”€â”€ Monthly Rent Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ --}}
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="admin-card">
+            <div class="admin-card-header">
+                <h6><i class="fas fa-home text-success me-2"></i>Monthly Rent Collection (Last 12 Months)</h6>
+                <div class="d-flex gap-2" style="font-size:.72rem;">
+                    <span class="d-flex align-items-center gap-1"><span style="width:12px;height:12px;background:#10b981;border-radius:3px;display:inline-block;"></span>Monthly Rent</span>
+                </div>
+            </div>
+            <div class="p-3">
+                <canvas id="rentChart" height="90"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Admin Workflow Overview --}}
+<div class="admin-card mb-4">
+    <div class="admin-card-header">
+        <h6><i class="fas fa-cogs text-primary me-2"></i>Admin Workflow Overview</h6>
+    </div>
+    <div class="p-3">
+        <div class="row g-3">
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-purple-soft">
+                        <i class="fas fa-search text-purple"></i>
+                    </div>
+                    <h6 class="mt-2">🔍 Inspections</h6>
+                    <div class="fw-bold fs-4 text-purple">{{ $pendingInspections ?? 0 }}</div>
+                    <small class="text-muted">Pending</small>
+                    <a href="{{ route('admin.inspections') }}" class="btn btn-sm btn-outline-purple mt-2">Manage</a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-teal-soft">
+                        <i class="fas fa-file-contract text-teal"></i>
+                    </div>
+                    <h6 class="mt-2">📑 Lease Requests</h6>
+                    <div class="fw-bold fs-4 text-teal">{{ $pendingAgreements ?? 0 }}</div>
+                    <small class="text-muted">Waiting for lease upload</small>
+                    <a href="{{ route('admin.rentals') }}?lease_queue=1" class="btn btn-sm btn-outline-teal mt-2">Review</a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-red-soft">
+                        <i class="fas fa-file-signature text-red"></i>
+                    </div>
+                    <h6 class="mt-2">💳 Advance Payments</h6>
+                    <div class="fw-bold fs-4 text-red">{{ $pendingAdvancePayments ?? 0 }}</div>
+                    <small class="text-muted">Waiting for admin verification</small>
+                    <a href="{{ route('admin.transactions') }}?type=advance" class="btn btn-sm btn-outline-red mt-2">Review</a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-green-soft">
+                        <i class="fas fa-money-bill-wave text-green"></i>
+                    </div>
+                    <h6 class="mt-2">💰 Payments</h6>
+                    <div class="fw-bold fs-4 text-green">{{ $pendingPayments ?? 0 }}</div>
+                    <small class="text-muted">Pending Verification</small>
+                    <a href="{{ route('admin.transactions') }}" class="btn btn-sm btn-outline-green mt-2">Verify</a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-orange-soft">
+                        <i class="fas fa-door-open text-orange"></i>
+                    </div>
+                    <h6 class="mt-2">🚪 Move-Out</h6>
+                    <div class="fw-bold fs-4 text-orange">{{ $openMoveOutRequests ?? 0 }}</div>
+                    <small class="text-muted">Open Requests</small>
+                    <a href="{{ route('admin.rentals') }}" class="btn btn-sm btn-outline-orange mt-2">Handle</a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-red-soft">
+                        <i class="fas fa-exclamation-triangle text-red"></i>
+                    </div>
+                    <h6 class="mt-2">⚠ Complaints</h6>
+                    <div class="fw-bold fs-4 text-red">{{ $pendingComplaints ?? 0 }}</div>
+                    <small class="text-muted">Pending</small>
+                    <a href="#" class="btn btn-sm btn-outline-red mt-2">Address</a>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <div class="workflow-card text-center">
+                    <div class="workflow-icon bg-purple-soft">
+                        <i class="fas fa-chart-bar text-purple"></i>
+                    </div>
+                    <h6 class="mt-2">📊 Reports</h6>
+                    <div class="fw-bold fs-4 text-purple">—</div>
+                    <small class="text-muted">Analytics</small>
+                    <a href="#" class="btn btn-sm btn-outline-purple mt-2">View</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- â”€â”€ Notification Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ --}}
-@if($notifPendingUsers->count() > 0 || $notifPendingProperties->count() > 0 || $notifPendingRentals->count() > 0)
+@if($notifPendingUsers->count() > 0 || $notifPendingProperties->count() > 0 || $notifPendingAgreements->count() > 0 || $notifPendingRentals->count() > 0 || ($notifMoveOutRequests->count() ?? 0) > 0)
 <div class="row g-3 mb-4">
     @if($notifPendingUsers->count() > 0)
     <div class="col-md-4">
@@ -224,26 +440,24 @@
     </div>
     @endif
 
-    @if($notifPendingProperties->count() > 0)
+    @if($notifPendingAgreements->count() > 0)
     <div class="col-md-4">
         <div class="admin-card border border-blue border-opacity-50 h-100" style="border-color:#bfdbfe!important">
             <div class="admin-card-header" style="background:#eff6ff;">
                 <h6><i class="fas fa-house-circle-check text-primary me-2"></i>Property Requests
-                    <span class="badge bg-primary ms-1">{{ $pendingProperties }}</span>
+                    <span class="badge bg-success ms-1">{{ $pendingAgreements ?? 0 }}</span>
                 </h6>
-                <a href="{{ route('admin.properties') }}?status=pending" class="btn btn-sm btn-primary" style="font-size:.72rem;">Review</a>
+                <a href="{{ route('admin.rentals') }}?lease_queue=1" class="btn btn-sm btn-success" style="font-size:.72rem;">Upload</a>
             </div>
             <div class="p-0">
-                @foreach($notifPendingProperties as $p)
+                @foreach($notifPendingAgreements as $r)
                 <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom" style="font-size:.8rem;">
                     <div class="u-avatar" style="background:#dbeafe;color:#2563eb;"><i class="fas fa-building" style="font-size:.75rem;"></i></div>
                     <div class="flex-fill overflow-hidden">
-                        <div class="fw-semibold text-truncate">{{ Str::limit($p->title, 24) }}</div>
-                        <div class="text-muted" style="font-size:.72rem;">by {{ $p->owner->name ?? 'â€”' }} Â· Nu. {{ number_format($p->price, 0) }}/mo</div>
+                        <div class="fw-semibold text-truncate">{{ Str::limit($r->house->title ?? '—', 24) }}</div>
+                        <div class="text-muted" style="font-size:.72rem;">{{ Str::limit($r->house->title ?? '—', 22) }} · lease upload needed</div>
                     </div>
-                    <form action="{{ route('admin.properties.approve', $p->id) }}" method="POST" class="m-0">
-                        @csrf<button class="btn btn-xs btn-outline-primary" style="font-size:.68rem;padding:.18rem .45rem;" title="Approve"><i class="fas fa-check"></i></button>
-                    </form>
+                    <a href="{{ route('admin.rentals') }}?lease_queue=1" class="btn btn-xs btn-outline-primary" style="font-size:.68rem;padding:.18rem .45rem;" title="Open lease upload queue"><i class="fas fa-eye"></i></a>
                 </div>
                 @endforeach
             </div>
@@ -255,7 +469,7 @@
     <div class="col-md-4">
         <div class="admin-card border border-success border-opacity-25 h-100">
             <div class="admin-card-header" style="background:#f0fdf4;">
-                <h6><i class="fas fa-file-contract text-success me-2"></i>Rental Requests
+                <h6><i class="fas fa-file-contract text-success me-2"></i>Lease Requests
                     <span class="badge bg-success ms-1">{{ $pendingRentals }}</span>
                 </h6>
                 <a href="{{ route('admin.rentals') }}?status=pending" class="btn btn-sm btn-success" style="font-size:.72rem;">View</a>
@@ -268,6 +482,37 @@
                         <div class="fw-semibold text-truncate">{{ $r->tenant->name ?? 'â€”' }}</div>
                         <div class="text-muted" style="font-size:.72rem;">{{ Str::limit($r->house->title ?? 'â€”', 22) }} Â· {{ \Carbon\Carbon::parse($r->created_at)->diffForHumans() }}</div>
                     </div>
+                </div>
+                @endforeach
+            </div>
+        </div>
+    </div>
+    @endif
+
+    @if(($notifMoveOutRequests->count() ?? 0) > 0)
+    <div class="col-md-4">
+        <div class="admin-card border border-warning border-opacity-50 h-100">
+            <div class="admin-card-header" style="background:#fff7ed;">
+                <h6><i class="fas fa-door-open text-warning me-2"></i>Tenant Move-Out Requests
+                    <span class="badge bg-warning text-dark ms-1">{{ $openMoveOutRequests ?? 0 }}</span>
+                </h6>
+                <a href="{{ route('admin.rentals') }}" class="btn btn-sm btn-warning" style="font-size:.72rem;">Manage</a>
+            </div>
+            <div class="p-0">
+                @foreach($notifMoveOutRequests as $m)
+                <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom" style="font-size:.8rem;">
+                    <div class="u-avatar" style="background:#ffedd5;color:#c2410c;"><i class="fas fa-door-open" style="font-size:.75rem;"></i></div>
+                    <div class="flex-fill overflow-hidden">
+                        <div class="fw-semibold text-truncate">{{ $m->tenant->name ?? '—' }}</div>
+                        <div class="text-muted" style="font-size:.72rem;">
+                            {{ Str::limit($m->house->title ?? '—', 18) }} · Move-out {{ $m->move_out_date ? \Carbon\Carbon::parse($m->move_out_date)->format('d M Y') : 'date not set' }}
+                        </div>
+                    </div>
+                    @if($m->status === 'requested')
+                        <span class="chip chip-yellow">Requested</span>
+                    @else
+                        <span class="chip chip-blue">Approved</span>
+                    @endif
                 </div>
                 @endforeach
             </div>
@@ -346,6 +591,7 @@
                     <th>Owner</th>
                     <th class="text-end">Rent Amount</th>
                     <th class="text-end">Commission ({{ $rate }}%)</th>
+                    <th class="text-center">Month</th>
                     <th>Date</th>
                     <th class="text-center">Status</th>
                 </tr>
@@ -367,6 +613,7 @@
                     <td class="text-muted small">{{ $owner->name ?? 'â€”' }}</td>
                     <td class="text-end fw-600" style="color:#0f172a;">Nu. {{ number_format($p->amount, 0) }}</td>
                     <td class="text-end fw-600" style="color:#9333ea;">Nu. {{ number_format($p->commission_amount, 0) }}</td>
+                    <td class="text-center text-muted small">{{ $p->billingMonthLabel() }}</td>
                     <td class="text-muted small">{{ $p->payment_date->format('d M Y') }}</td>
                     <td class="text-center">
                         @if($p->status === 'paid')
@@ -379,7 +626,7 @@
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="7" class="text-center text-muted py-4"><i class="fas fa-receipt fa-2x mb-2 d-block opacity-25"></i>No transactions yet.</td></tr>
+                <tr><td colspan="8" class="text-center text-muted py-4"><i class="fas fa-receipt fa-2x mb-2 d-block opacity-25"></i>No transactions yet.</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -389,12 +636,14 @@
 @endsection
 
 @push('scripts')
+<script id="adminChartData" type="application/json">{!! json_encode($chartData) !!}</script>
+<script id="rentChartData" type="application/json">{!! json_encode($rentChartData) !!}</script>
 <script>
 (function() {
-    const data   = @json($chartData);
-    const labels = data.map(d => d.label);
-    const rev    = data.map(d => d.revenue);
-    const comm   = data.map(d => d.commission);
+    var data = JSON.parse(document.getElementById('adminChartData').textContent || '[]');
+    var labels = data.map(function(d) { return d.label; });
+    var rev = data.map(function(d) { return d.revenue; });
+    var comm = data.map(function(d) { return d.commission; });
 
     new Chart(document.getElementById('revenueChart'), {
         data: {
@@ -430,14 +679,59 @@
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
-                        label: ctx => ' Nu. ' + Number(ctx.raw).toLocaleString('en-IN')
+                        label: function(ctx) { return ' Nu. ' + Number(ctx.raw).toLocaleString('en-IN'); }
                     }
                 }
             },
             scales: {
                 y: {
                     ticks: {
-                        callback: v => 'Nu.' + (v >= 1000 ? (v/1000).toFixed(0)+'K' : v),
+                        callback: function(v) { return 'Nu.' + (v >= 1000 ? (v/1000).toFixed(0)+'K' : v); },
+                        font: { size: 11 }
+                    },
+                    grid: { color: '#f1f5f9' }
+                },
+                x: {
+                    ticks: { font: { size: 10 } },
+                    grid: { display: false }
+                }
+            }
+        }
+    });
+})();
+
+(function() {
+    var rentData = JSON.parse(document.getElementById('rentChartData').textContent || '[]');
+    var labels = rentData.map(function(d) { return d.label; });
+    var rents = rentData.map(function(d) { return d.monthly_rent; });
+
+    new Chart(document.getElementById('rentChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Monthly Rent (Nu.)',
+                data: rents,
+                backgroundColor: 'rgba(16,185,129,0.75)',
+                borderColor: '#10b981',
+                borderWidth: 1,
+                borderRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) { return ' Nu. ' + Number(ctx.raw).toLocaleString('en-IN'); }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: function(v) { return 'Nu.' + (v >= 1000 ? (v/1000).toFixed(0)+'K' : v); },
                         font: { size: 11 }
                     },
                     grid: { color: '#f1f5f9' }

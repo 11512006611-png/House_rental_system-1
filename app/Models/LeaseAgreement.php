@@ -9,9 +9,12 @@ class LeaseAgreement extends Model
 {
     use HasFactory;
 
+    protected $table = 'leases';
+
     protected $fillable = [
         'agreement_id',
         'rental_id',
+        'booking_id',
         'owner_id',
         'tenant_id',
         'house_id',
@@ -19,13 +22,19 @@ class LeaseAgreement extends Model
         'original_name',
         'monthly_rent',
         'deposit_amount',
+        'security_deposit_amount',
+        'duration_months',
         'payment_status',
+        'tenant_review_status',
+        'tenant_reviewed_at',
+        'tenant_review_note',
         'lease_start_date',
         'lease_end_date',
         'tenant_signature_name',
         'tenant_signed_at',
         'owner_signature_name',
         'owner_signed_at',
+        'status',
         'uploaded_at',
         'generated_at',
     ];
@@ -33,6 +42,9 @@ class LeaseAgreement extends Model
     protected $casts = [
         'monthly_rent' => 'decimal:2',
         'deposit_amount' => 'decimal:2',
+        'security_deposit_amount' => 'decimal:2',
+        'duration_months' => 'integer',
+        'tenant_reviewed_at' => 'datetime',
         'lease_start_date' => 'date',
         'lease_end_date' => 'date',
         'tenant_signed_at' => 'datetime',
@@ -44,6 +56,11 @@ class LeaseAgreement extends Model
     public function rental()
     {
         return $this->belongsTo(Rental::class);
+    }
+
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
     }
 
     public function owner()
